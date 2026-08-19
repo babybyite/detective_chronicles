@@ -30,7 +30,7 @@ import {
 import type { MysteryVisualRace, RavenwoodGuestPortraitAsset } from "./ravenwoodPortraitAssets";
 
 type ThemeName = "dark" | "pastel";
-type Screen = "menu" | "load" | "past" | "settings" | "mysteryBookSelect" | "mysteryDetectiveSelect" | "mysteryPortraitSelect" | "mystery" | "mysteryCharacter" | "mysteryRelations" | "mysteryFamilyTree" | "mysteryMap" | "mysteryJournal";
+type Screen = "menu" | "load" | "past" | "medals" | "settings" | "mysteryBookSelect" | "mysteryDetectiveSelect" | "mysteryPortraitSelect" | "mystery" | "mysteryCharacter" | "mysteryRelations" | "mysteryFamilyTree" | "mysteryMap" | "mysteryJournal";
 type Sex = "Female" | "Male";
 
 const canUseBrowserWindowScroll = () => typeof window !== "undefined" && typeof window.scrollTo === "function";
@@ -167,8 +167,8 @@ type MysteryFindable = {
   falseLeadForMurderIndex?: number;
   proofText?: string;
   searchDifficulty?: MysteryRollOutcome["tier"];
-  rollFailures?: Partial<Record<MysteryCheckKind, number>>;
-  lockedChecks?: MysteryCheckKind[];
+  rollFailures?: Record<string, number>;
+  lockedChecks?: string[];
   collected?: boolean;
 };
 
@@ -279,8 +279,11 @@ type MysteryGame = {
   aiMemory: string[];
   aiConversationSummaries: string[];
   npcConversationMemory?: Record<string, string[]>;
+  conversationNpcId?: string;
+  conversationRoomId?: string;
   discoveredProof: string[];
   inventory: string[];
+  medalEvents?: MysteryMedalId[];
   rollAttemptLedger?: Record<string, number>;
   seriousCatchCount?: number;
   finished: boolean;
@@ -297,6 +300,62 @@ type MysteryGame = {
   witnessInvitationNpcIds?: string[];
   witnessKnowledgeDeliveredNpcIds?: string[];
 };
+
+type MysteryMedalId =
+  | "killerCaught"
+  | "perfectSolve"
+  | "motiveReader"
+  | "proofBearer"
+  | "oneLifeSaved"
+  | "twoLivesSaved"
+  | "childSaved"
+  | "childMurdererCaught"
+  | "killerRomance"
+  | "loveFound"
+  | "loveLost"
+  | "witnessSilenced"
+  | "lastGlassStanding"
+  | "coupleBreaker"
+  | "bloodyJustice"
+  | "tooRightToLive"
+  | "evidenceArchivist"
+  | "witnessWhisperer"
+  | "lightFingers"
+  | "midnightCloser";
+
+type MysteryMedalDefinition = {
+  id: MysteryMedalId;
+  title: string;
+  description: string;
+  icon: ImageSourcePropType;
+};
+
+const mysteryMedalDefinitions: MysteryMedalDefinition[] = [
+  { id: "killerCaught", title: "Killer Caught", description: "Finish a case by stopping the murderer.", icon: require("./assets/ravenwood/medals/optimized/killer_caught.png") },
+  { id: "perfectSolve", title: "Perfect Solve", description: "Get the killer, motive, and proof right in one accusation.", icon: require("./assets/ravenwood/medals/optimized/perfect_solve.png") },
+  { id: "motiveReader", title: "Motive Reader", description: "Win an accusation because you guessed the motive right.", icon: require("./assets/ravenwood/medals/optimized/motive_reader.png") },
+  { id: "proofBearer", title: "Proof Bearer", description: "Win an accusation with the right physical proof.", icon: require("./assets/ravenwood/medals/optimized/proof_bearer.png") },
+  { id: "oneLifeSaved", title: "Life Saver", description: "Prevent at least one future murder by catching the murderer fast enough.", icon: require("./assets/ravenwood/medals/optimized/one_life_saved.png") },
+  { id: "twoLivesSaved", title: "Two Lives Saved", description: "Prevent at least two future murders in one game.", icon: require("./assets/ravenwood/medals/optimized/two_lives_saved.png") },
+  { id: "childSaved", title: "Small Hand Held", description: "Prevent the murder of a child resident.", icon: require("./assets/ravenwood/medals/optimized/child_saved.png") },
+  { id: "childMurdererCaught", title: "Child Murderer Caught", description: "Catch or stop a killer whose victim was a child.", icon: require("./assets/ravenwood/medals/optimized/child_murderer_caught.png") },
+  { id: "killerRomance", title: "Dangerous Heart", description: "Build a romance with the murderer before the case ends.", icon: require("./assets/ravenwood/medals/optimized/killer_romance.png") },
+  { id: "loveFound", title: "Love in the Mansion", description: "End a finished case with a living love interest.", icon: require("./assets/ravenwood/medals/optimized/love_found.png") },
+  { id: "loveLost", title: "Love Lost in the Mansion", description: "Lose a love interest in Ravenwood.", icon: require("./assets/ravenwood/medals/optimized/love_lost.png") },
+  { id: "witnessSilenced", title: "Silenced Witness", description: "Kill a witness to protect the murderer.", icon: require("./assets/ravenwood/medals/optimized/witness_silenced.png") },
+  { id: "lastGlassStanding", title: "Last Glass Standing", description: "Outdrink the mansion guests and still finish the case.", icon: require("./assets/ravenwood/medals/optimized/last_glass_standing.png") },
+  { id: "coupleBreaker", title: "Broken Hearts", description: "Break up a couple.", icon: require("./assets/ravenwood/medals/optimized/couple_breaker.png") },
+  { id: "bloodyJustice", title: "Bloody Justice", description: "End a case by killing the culprit yourself.", icon: require("./assets/ravenwood/medals/optimized/bloody_justice.png") },
+  { id: "tooRightToLive", title: "Too Right to Live", description: "Name the true killer without enough proof and pay for it.", icon: require("./assets/ravenwood/medals/optimized/too_right_to_live.png") },
+  { id: "evidenceArchivist", title: "Evidence Archivist", description: "Collect every proof item during working a case.", icon: require("./assets/ravenwood/medals/optimized/evidence_archivist.png") },
+  { id: "witnessWhisperer", title: "Witness Whisperer", description: "Earn enough trust for a witness to privately reveal what they know.", icon: require("./assets/ravenwood/medals/optimized/witness_whisperer.png") },
+  { id: "lightFingers", title: "Light Fingers", description: "Successfully steal an item during a finished case.", icon: require("./assets/ravenwood/medals/optimized/light_fingers.png") },
+  { id: "midnightCloser", title: "Midnight Closer", description: "Win a case at Night or Midnight.", icon: require("./assets/ravenwood/medals/optimized/midnight_closer.png") }
+];
+
+function addMysteryMedalEvents(existing: MysteryMedalId[] | undefined, events: MysteryMedalId[]): MysteryMedalId[] {
+  return Array.from(new Set([...(existing ?? []), ...events]));
+}
 
 const themes = {
   dark: {
@@ -354,6 +413,7 @@ function appBackgroundForScreen(themeName: ThemeName, screen: Screen): ImageSour
   const screenOrder: Screen[] = [
     "load",
     "past",
+    "medals",
     "settings",
     "mysteryDetectiveSelect",
     "mysteryPortraitSelect",
@@ -866,6 +926,45 @@ function mysteryCanPlayerHaveRomanceWithNpc(player: Pick<MysteryGame["player"], 
   const playerAge = mysteryPlayerAge(player);
   const npcUsesAge10Portrait = mysteryNpcUsesAge10Portrait(npc);
   return playerAge === 12 ? npcUsesAge10Portrait : !npcUsesAge10Portrait;
+}
+
+function mysteryMedalIdsForFinishedGame(mystery: MysteryGame): MysteryMedalId[] {
+  if (!mystery.finished) return [];
+  const ids = new Set<MysteryMedalId>(mystery.medalEvents ?? []);
+  const npcById = new Map(mystery.npcs.map((npc) => [npc.id, npc]));
+  const killerIds = new Set(mystery.murders.map((murder) => murder.killerId));
+  const preventedMurders = mystery.murders.filter((murder) => murder.prevented);
+  const solvedMurders = mystery.murders.filter((murder) => murder.solved);
+  const summary = (mystery.summary ?? "").toLowerCase();
+
+  if (mystery.won) ids.add("killerCaught");
+  if (preventedMurders.length >= 1) ids.add("oneLifeSaved");
+  if (preventedMurders.length >= 2) ids.add("twoLivesSaved");
+  if (preventedMurders.some((murder) => npcById.get(murder.victimId)?.isChild)) ids.add("childSaved");
+  if (mystery.won && [...solvedMurders, ...preventedMurders].some((murder) => npcById.get(murder.victimId)?.isChild)) ids.add("childMurdererCaught");
+  if (mystery.npcs.some((npc) => killerIds.has(npc.id) && npc.romance >= 20)) ids.add("killerRomance");
+  if (mystery.npcs.some((npc) => npc.alive && npc.romance >= 65 && mysteryCanPlayerHaveRomanceWithNpc(mystery.player, npc))) ids.add("loveFound");
+  if (mystery.npcs.some((npc) => !npc.alive && npc.romance >= 65 && mysteryCanPlayerHaveRomanceWithNpc(mystery.player, npc))) ids.add("loveLost");
+  if (summary.includes("killed") && summary.includes("ended the murders")) ids.add("bloodyJustice");
+  if (summary.includes("accused the true killer without enough proof")) ids.add("tooRightToLive");
+  if ((mystery.witnessKnowledgeDeliveredNpcIds ?? []).length > 0) ids.add("witnessWhisperer");
+  if (mystery.won && (mystery.daytime === "Night" || mystery.daytime === "Midnight")) ids.add("midnightCloser");
+
+  const proofFindables = mystery.findables.filter((findable) => findable.kind === "Proof");
+  if (proofFindables.length > 0) {
+    const inventory = mystery.inventory.map((item) => item.toLowerCase());
+    const discoveredProof = mystery.discoveredProof.map((item) => item.toLowerCase());
+    const allProofsCollected = proofFindables.every((findable) => {
+      const proofText = findable.proofText?.toLowerCase();
+      const names = [findable.name, findable.playerName, findable.description, findable.playerDescription].filter(Boolean).map((item) => item!.toLowerCase());
+      return Boolean(findable.collected) ||
+        (proofText ? discoveredProof.includes(proofText) : false) ||
+        names.some((name) => inventory.includes(name));
+    });
+    if (allProofsCollected) ids.add("evidenceArchivist");
+  }
+
+  return mysteryMedalDefinitions.filter((definition) => ids.has(definition.id)).map((definition) => definition.id);
 }
 
 function mysteryPlayerPortraitSubject(player: MysteryGame["player"]): PortraitSubject {
@@ -3302,6 +3401,27 @@ function mysteryFindablePlayerFacingDescriptionValue(findable: MysteryFindable):
   return mysterySentenceCaseText(cleaned.replace(/[.]+$/g, "")) + ".";
 }
 
+function mysteryTextWithoutPunctuation(value: string): string {
+  return cleanRavenwoodNameText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mysteryFindableDiscoveryDescriptionForMessage(findable: MysteryFindable): string {
+  const name = mysteryFindablePlayerFacingNameValue(findable);
+  const description = mysteryFindablePlayerFacingDescriptionValue(findable);
+  const normalizedName = mysteryTextWithoutPunctuation(name);
+  const normalizedDescription = mysteryTextWithoutPunctuation(description);
+  if (!normalizedDescription || normalizedDescription === normalizedName) return "";
+  if (normalizedName && normalizedDescription.startsWith(normalizedName)) {
+    const remainder = normalizedDescription.slice(normalizedName.length).trim();
+    if (!remainder || /^(it|this|that|the|a|an)\b/.test(remainder)) return "";
+  }
+  return description;
+}
+
 function mysteryWithPlayerFacingFindableText(findable: MysteryFindable): MysteryFindable {
   return {
     ...findable,
@@ -5457,6 +5577,7 @@ aiConversationSummaries: [],
 npcConversationMemory: {},
 discoveredProof: [],
 inventory,
+medalEvents: [],
 finished: false,
 won: false,
 pendingArrivalPopup: { entries: arrivalEntries },
@@ -5478,6 +5599,7 @@ export default function App() {
   const [draft, setDraft] = useState<CharacterDraft>(initialDraft);
   const [mysteries, setMysteries] = useState<MysteryGame[]>([]);
   const [activeMysteryId, setActiveMysteryId] = useState<string | null>(null);
+  const [mysteryJournalBackScreen, setMysteryJournalBackScreen] = useState<Screen>("mystery");
   const [selectedMysteryDetectiveId, setSelectedMysteryDetectiveId] = useState(ravenwoodDetectiveProfiles[0].id);
   const [selectedMysteryDetectiveAge, setSelectedMysteryDetectiveAge] = useState(24);
   const [focusedMysteryNpcId, setFocusedMysteryNpcId] = useState<string | null>(null);
@@ -5504,6 +5626,7 @@ export default function App() {
   const mysteryTreeVerticalRef = useRef<ScrollView | null>(null);
   const mysteryTreeSelectedCenterRef = useRef<{ x: number; y: number; canvasWidth: number; canvasHeight: number } | null>(null);
   const mysteryTreePressRef = useRef<{ npcId: string; time: number } | null>(null);
+  const medalPressRef = useRef<{ medalId: MysteryMedalId; mysteryId: string; time: number } | null>(null);
   const mysteryTreeSinglePressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detectiveCarouselRef = useRef<ScrollView | null>(null);
   const detectiveCarouselOffsetRef = useRef(0);
@@ -5836,10 +5959,11 @@ export default function App() {
   }
 
   function currentMysteryNpcRoomId(
-    mystery: Pick<MysteryGame, "id" | "day" | "daytime"> & Partial<Pick<MysteryGame, "currentRoomId" | "witnessInvitationNpcIds" | "witnessKnowledgeDeliveredNpcIds">>,
+    mystery: Pick<MysteryGame, "id" | "day" | "daytime"> & Partial<Pick<MysteryGame, "currentRoomId" | "conversationNpcId" | "conversationRoomId" | "witnessInvitationNpcIds" | "witnessKnowledgeDeliveredNpcIds">>,
     npc: MysteryNpc
   ): string {
     if (!npc.alive) return npc.role === "Guest" ? npc.roomId : npc.stationRoomId;
+    if (mystery.conversationNpcId === npc.id && mystery.conversationRoomId) return mystery.conversationRoomId;
     if (
       mystery.currentRoomId &&
       mystery.witnessInvitationNpcIds?.includes(npc.id) &&
@@ -6026,7 +6150,7 @@ export default function App() {
   function mysteryRollAttemptKey(text: string, mystery: MysteryGame, check: MysteryCheckKind, roomId: string): string {
     const lower = text.toLowerCase();
     const roomIntent = detectMysteryRoomIntent(text, mystery);
-    const target = mysteryTargetNpc(text, mystery, roomId) ?? mystery.npcs.find((npc) => lower.includes(npc.firstName.toLowerCase()) || lower.includes(fullName(npc).toLowerCase()));
+    const target = mysteryTargetNpc(text, mystery, roomId) ?? mystery.npcs.find((npc) => mysteryTextMentionsNpc(lower, npc));
     const action = lower.match(/\b(lockpick|pick the lock|unlock)\b/)
       ? "lockpick"
       : lower.match(/\b(sneak|hide|slip past|eavesdrop|follow|tail|shadow)\b/)
@@ -6040,10 +6164,10 @@ export default function App() {
               : lower.match(/\b(search|investigate|proof|evidence|inspect|look|read|trace|clue|find)\b/)
                 ? "search"
                 : "action";
-    const objective = lower.match(/\b(bed|drawer|desk|writing case|case|bag|pocket|key|letter|note|ledger|knife|gun|candlestick|poison|document|proof|evidence|body|blood|secret|alibi|witness|room)\b/)?.[1] ?? "general";
+    const objective = lower.match(/\b(bed|drawer|desk|writing case|case|bag|pocket|key|letter|note|ledger|knife|gun|candlestick|poison|document|proof|evidence|body|blood|secret|alibi|witness|room|wallet|cufflink|button|lighter|matchbook|watch|ring|locket|paper|medicine|vial|photo|photograph|badge|ticket|card|receipt)\b/)?.[1] ?? "general";
     const place = roomIntent?.id ?? roomId;
     const targetPart = target?.id ?? "no-target";
-    return [check, action, place, targetPart, objective].join(":");
+    return [`day-${mystery.day}`, check, action, place, targetPart, objective].join(":");
   }
 
   function mysteryRollAttemptIsLimited(mystery: MysteryGame, key: string): boolean {
@@ -6052,6 +6176,18 @@ export default function App() {
 
   function mysteryRecordRollAttempt(ledger: Record<string, number>, key: string): Record<string, number> {
     return { ...ledger, [key]: (ledger[key] ?? 0) + 1 };
+  }
+
+  function mysteryFindableFailureKey(check: MysteryCheckKind, day: number): string {
+    return `${check}:day-${day}`;
+  }
+
+  function mysteryFindableFailureCount(findable: MysteryFindable | undefined, check: MysteryCheckKind, day: number): number {
+    return findable?.rollFailures?.[mysteryFindableFailureKey(check, day)] ?? 0;
+  }
+
+  function mysteryFindableCheckIsLimited(findable: MysteryFindable | undefined, check: MysteryCheckKind, day: number): boolean {
+    return mysteryFindableFailureCount(findable, check, day) >= 2;
   }
 
   function mysteryRoll(_text: string, _mystery: MysteryGame): string | undefined {
@@ -6199,10 +6335,43 @@ export default function App() {
     return npcs.map((npc) => idSet.has(npc.id) ? { ...npc, trust: clamp(npc.trust + delta, 0, 100) } : npc);
   }
 
+  function mysteryWordsAreCloseMatch(left: string, right: string): boolean {
+    if (left === right) return true;
+    if (Math.abs(left.length - right.length) > 1 || Math.min(left.length, right.length) < 4) return false;
+    if (left.length === right.length) {
+      let differences = 0;
+      for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) differences += 1;
+        if (differences > 1) return false;
+      }
+      return true;
+    }
+    const shorter = left.length < right.length ? left : right;
+    const longer = left.length < right.length ? right : left;
+    let skipped = 0;
+    for (let shortIndex = 0, longIndex = 0; longIndex < longer.length; longIndex += 1) {
+      if (shorter[shortIndex] === longer[longIndex]) {
+        shortIndex += 1;
+      } else {
+        skipped += 1;
+        if (skipped > 1) return false;
+      }
+    }
+    return true;
+  }
+
+  function mysteryTextMentionsNpc(lowerText: string, npc: MysteryNpc): boolean {
+    const first = npc.firstName.toLowerCase();
+    const full = fullName(npc).toLowerCase();
+    if (lowerText.includes(first) || lowerText.includes(full)) return true;
+    const words = lowerText.match(/[a-z]+/g) ?? [];
+    return words.some((word) => mysteryWordsAreCloseMatch(word, first));
+  }
+
   function mysteryTargetNpc(text: string, mystery: MysteryGame, roomId: string): MysteryNpc | undefined {
     const lower = text.toLowerCase();
-    const named = mystery.npcs.find((npc) => lower.includes(npc.firstName.toLowerCase()) || lower.includes(fullName(npc).toLowerCase()));
-    if (named) return named;
+    const named = mystery.npcs.find((npc) => mysteryTextMentionsNpc(lower, npc));
+    if (named) return currentMysteryNpcRoomId(mystery, named) === roomId ? named : undefined;
     const roomPeople = mysteryPeopleInRoom(mystery, roomId).filter((person) => person.id !== mystery.player.id) as MysteryNpc[];
     return roomPeople[0];
   }
@@ -6273,7 +6442,7 @@ export default function App() {
     const room = mystery.rooms.find((candidate) => candidate.id === roomId);
     const people = mysteryPeopleInRoom(mystery, roomId).filter((person) => person.id !== mystery.player.id) as MysteryNpc[];
     const nearby = people.length > 0
-      ? `${fullName(people[0])} is nearby.`
+      ? `${people.map(fullName).join(", ")} ${people.length === 1 ? "is" : "are"} nearby.`
       : "No resident is openly present.";
     return `${room ? mysteryRoomMood(room, mystery) : "The room feels quiet and uncertain."} ${nearby}`;
   }
@@ -6321,12 +6490,58 @@ export default function App() {
       .find((item) => lower.includes(item.toLowerCase()) || lower.includes(titleCase(item).toLowerCase()));
   }
 
+  function mysteryInventoryItemLooksOwnedByNpc(item: string, npc: MysteryNpc): boolean {
+    const lower = item.toLowerCase();
+    return lower.includes(fullName(npc).toLowerCase()) ||
+      lower.includes(npc.firstName.toLowerCase()) ||
+      lower.includes(npc.familyName.toLowerCase()) ||
+      lower.includes(mysteryNpcInitials(npc).toLowerCase());
+  }
+
+  function mysteryMeaningfulItemWords(item: string): string[] {
+    const ignored = new Set(["with", "from", "room", "guest", "staff", "service", "marked", "engraved", "broken", "found", "near", "inside", "under", "listing", "page", "note"]);
+    return Array.from(new Set(
+      item
+        .toLowerCase()
+        .match(/[a-z]+/g)
+        ?.filter((word) => word.length >= 4 && !ignored.has(word)) ?? []
+    ));
+  }
+
+  function mysteryTransferInventoryItem(text: string, mystery: MysteryGame, target?: MysteryNpc): string | undefined {
+    const lower = text.toLowerCase();
+    const pronounForTarget = target && (
+      (target.sex === "Female" && /\b(her|hers)\b/.test(lower)) ||
+      (target.sex === "Male" && /\b(him|his)\b/.test(lower)) ||
+      /\b(their|theirs)\b/.test(lower)
+    );
+    const scored = mystery.inventory
+      .map((item) => {
+        const itemLower = item.toLowerCase();
+        const displayLower = displayMysteryItemName(item).toLowerCase();
+        let score = 0;
+        if (lower.includes(itemLower) || lower.includes(displayLower)) score += 12;
+        for (const word of mysteryMeaningfulItemWords(item)) {
+          if (lower.includes(word)) score += 2;
+        }
+        if (target && mysteryInventoryItemLooksOwnedByNpc(item, target)) score += pronounForTarget ? 8 : 5;
+        return { item, score };
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((a, b) => b.score - a.score || b.item.length - a.item.length);
+    return scored[0]?.item;
+  }
+
+  function mysteryItemTransferIntent(text: string): boolean {
+    return /\b(give|hand|return|give back|hand back|bring back|offer|pass|deliver)\b/i.test(text);
+  }
+
   function mysteryInventoryItemNpcReaction(item: string, npc: MysteryNpc): string | null {
     const lower = item.toLowerCase();
     const npcName = fullName(npc).toLowerCase();
     const npcInitials = mysteryNpcInitials(npc).toLowerCase();
     if (lower.includes(npcName) || lower.includes(npcInitials)) {
-      return "That is mine, or near enough to mine that I want to know where you found it.";
+      return "That is mine, where did you find it?";
     }
     if ((lower.includes("cigarette") || lower.includes("lighter")) && mysteryDisplaySubstancePreference(npc).includes("cigarettes")) {
       return "A cigarette is a small mercy in this house. I might answer better with one in my hand.";
@@ -6587,10 +6802,8 @@ export default function App() {
   function mysteryRoomDescription(mystery: MysteryGame, roomId: string): StoryMessage {
     const room = mystery.rooms.find((candidate) => candidate.id === roomId);
     const people = mysteryPeopleInRoom(mystery, roomId).filter((person) => person.id !== mystery.player.id) as MysteryNpc[];
-    const visiblePeople = people.slice(0, 2);
-    const extra = people.length > visiblePeople.length ? ` and ${people.length - visiblePeople.length} more` : "";
     const text = room
-      ? `${mysteryRoomMood(room, mystery)} ${visiblePeople.length > 0 ? `${visiblePeople.map(fullName).join(", ")}${extra} ${visiblePeople.length === 1 ? "is" : "are"} nearby.` : "No resident is openly present."}`
+      ? `${mysteryRoomMood(room, mystery)} ${people.length > 0 ? `${people.map(fullName).join(", ")} ${people.length === 1 ? "is" : "are"} nearby.` : "No resident is openly present."}`
       : `You pause, unsure where Ravenwood has led you.`;
     return { id: uid(), speaker: "GM", text, rich: mysteryNpcSegments(text, mystery) };
   }
@@ -6613,6 +6826,7 @@ export default function App() {
   }
 
   function mysterySpeechIntent(text: string): boolean {
+    if (/\b(do you|did you|can you|could you|would you|will you|were you|are you|have you|tell me|know any|anything you|what do you|where were you|why did you|who did you)\b/i.test(text)) return true;
     return /\b(i|he|she|they|we)\s+(say|says|ask|asks|tell|tells|reply|replies|whisper|whispers|shout|shouts)\b/i.test(text)
       || /\b(compliment|praise|chat with|speak with|talk to|listen to|hear out)\b/i.test(text)
       || /["â€śâ€ť]/.test(text);
@@ -6890,14 +7104,17 @@ export default function App() {
       let aiMemory = [...(mystery.aiMemory ?? [])];
       let aiConversationSummaries = [...(mystery.aiConversationSummaries ?? [])];
       let npcConversationMemory = { ...(mystery.npcConversationMemory ?? {}) };
+      let conversationNpcId = mystery.conversationRoomId === currentRoom ? mystery.conversationNpcId : undefined;
+      let conversationRoomId = mystery.conversationRoomId === currentRoom ? mystery.conversationRoomId : undefined;
       let rooms = mystery.rooms;
       let npcs = refreshMysteryNpcStates(mystery, mystery.npcs, nextTime);
       let murders = mystery.murders;
       let inventory = [...mystery.inventory];
       let findables = [...(mystery.findables ?? [])];
+      let medalEvents = [...(mystery.medalEvents ?? [])];
       let rollAttemptLedger = { ...(mystery.rollAttemptLedger ?? {}) };
       let seriousCatchCount = mystery.seriousCatchCount ?? 0;
-      const namedSuspect = npcs.find((npc) => lower.includes(npc.firstName.toLowerCase()) || lower.includes(fullName(npc).toLowerCase()));
+      const namedSuspect = npcs.find((npc) => mysteryTextMentionsNpc(lower, npc));
       const suspectMurders = namedSuspect ? murders.filter((murder) => murder.killerId === namedSuspect.id) : [];
       const suspectProofs = suspectMurders.flatMap((murder) => murder.proofs?.length ? murder.proofs : [murder.proof]);
       let discoveredProof = [...mystery.discoveredProof];
@@ -6910,7 +7127,7 @@ export default function App() {
       let witnessInvitationNpcIds = [...(mystery.witnessInvitationNpcIds ?? [])];
       let witnessKnowledgeDeliveredNpcIds = [...(mystery.witnessKnowledgeDeliveredNpcIds ?? [])];
       let pendingBodyDiscoveryPopup = mystery.pendingBodyDiscoveryPopup;
-      const workingMystery = () => ({ ...mystery, rooms, currentRoomId: currentRoom, npcs, murders, findables, discoveredProof, witnessInvitationNpcIds, witnessKnowledgeDeliveredNpcIds, npcConversationMemory });
+      const workingMystery = () => ({ ...mystery, rooms, currentRoomId: currentRoom, npcs, murders, findables, discoveredProof, witnessInvitationNpcIds, witnessKnowledgeDeliveredNpcIds, npcConversationMemory, conversationNpcId, conversationRoomId });
       const ledgerLines = [
         `Turn: Day ${mystery.day} ${mystery.daytime}, ${mysteryRoomName(mystery, mystery.currentRoomId)}. Player wrote: "${text}". Next clock: Day ${nextTime.day} ${nextTime.daytime}.`
       ];
@@ -6930,7 +7147,7 @@ export default function App() {
         ? mysteryRollAttemptKey(text, mystery, rollResult.check, movementRoom?.id ?? currentRoom)
         : undefined;
       if (rollAttemptKey && mysteryRollAttemptIsLimited(mystery, rollAttemptKey)) {
-        const line = `You tried and failed this exact approach twice already. Try a different method, a different target, or wait for a new clue.`;
+        const line = `You tried and failed this exact approach twice today. Try a different method, a different target, or come back tomorrow when Ravenwood has shifted.`;
         const stampedMessages = stampMysteryMessages(
           [...mystery.messages, ...messages, { id: uid(), speaker: "GM", text: line }],
           mystery.day,
@@ -6985,6 +7202,8 @@ export default function App() {
             closedDoorRoomId = undefined;
             closedDoorReturnRoomId = undefined;
             currentRoom = movementRoom.id;
+            conversationNpcId = undefined;
+            conversationRoomId = undefined;
             hiddenInRoomId = undefined;
             hiddenFromNpcIds = [];
             if (access.message) messages.push(access.message);
@@ -7086,6 +7305,67 @@ export default function App() {
         ledgerLines.push("Action stopped because the mystery is already over.");
       } else if (bodyDiscoveryHappened) {
         ledgerLines.push("Action paused for the body discovery pop-up.");
+      } else if (mysteryItemTransferIntent(text)) {
+        const roomPeople = mysteryPeopleInRoom(workingMystery(), currentRoom).filter((person) => person.id !== mystery.player.id) as MysteryNpc[];
+        const target = mysteryTargetNpc(text, workingMystery(), currentRoom);
+        const targetPresent = target && roomPeople.some((person) => person.id === target.id);
+        if (!target || !targetPresent) {
+          const line = `You try to pass something over, but no clear recipient is close enough in the ${mysteryRoomName(mystery, currentRoom)}.`;
+          messages.push({ id: uid(), speaker: "GM", text: line, roll: rollText, rich: mysteryNpcSegments(line, workingMystery()) });
+          ledgerLines.push(`Item transfer failed: no reachable target in ${mysteryRoomName(mystery, currentRoom)}.${rollText ? ` ${rollText}.` : ""}`);
+        } else {
+          const transferItem = mysteryTransferInventoryItem(text, workingMystery(), target);
+          if (!transferItem) {
+            const line = `${fullName(target)} watches your hands, but you are not carrying an item that matches the request.`;
+            messages.push({ id: uid(), speaker: "GM", text: line, roll: rollText, rich: mysteryNpcSegments(line, workingMystery()) });
+            ledgerLines.push(`Item transfer failed: no matching inventory item for ${fullName(target)}.${rollText ? ` ${rollText}.` : ""}`);
+          } else {
+            const returningOwnItem = mysteryInventoryItemLooksOwnedByNpc(transferItem, target);
+            const trustDelta = returningOwnItem ? 8 : 3;
+            const itemLabel = displayMysteryItemName(transferItem);
+            const reaction = mysteryInventoryItemNpcReaction(transferItem, target);
+            inventory = mysteryRemoveOneInventoryItem(inventory, transferItem);
+            conversationNpcId = target.id;
+            conversationRoomId = currentRoom;
+            npcs = npcs.map((npc) => npc.id === target.id ? { ...npc, trust: clamp(npc.trust + trustDelta, 0, 100) } : npc);
+            const existingNpcMemory = npcConversationMemory[target.id] ?? [];
+            npcConversationMemory = {
+              ...npcConversationMemory,
+              [target.id]: [...existingNpcMemory, `${mystery.player.firstName} gave them ${itemLabel}`].slice(-8)
+            };
+            const targetName = fullName(target);
+            const targetColor = mysteryDialogueColor(target, workingMystery());
+            const quoteText = reaction
+              ? returningOwnItem
+                ? `"You found this?" ${reaction}"`
+                : `"${reaction}"`
+              : returningOwnItem
+                ? `"You found this?"`
+                : "";
+            const line = returningOwnItem
+              ? `${targetName} takes back ${itemLabel}. ${quoteText} ${targetName} trusts you more for returning it.`
+              : `${targetName} accepts ${itemLabel}.${quoteText ? ` ${quoteText}` : ""} ${targetName} seems a little more open.`;
+            const rich: StoryMessageSegment[] = returningOwnItem
+              ? [
+                { text: targetName, npcId: target.id, color: targetColor },
+                { text: ` takes back ${itemLabel}. ` },
+                { text: quoteText, color: targetColor },
+                { text: " " },
+                { text: targetName, npcId: target.id, color: targetColor },
+                { text: " trusts you more for returning it." }
+              ]
+              : [
+                { text: targetName, npcId: target.id, color: targetColor },
+                { text: ` accepts ${itemLabel}.` },
+                ...(quoteText ? [{ text: ` ${quoteText}`, color: targetColor }] : []),
+                { text: " " },
+                { text: targetName, npcId: target.id, color: targetColor },
+                { text: " seems a little more open." }
+              ];
+            messages.push({ id: uid(), speaker: "GM", text: line, roll: rollText, rich });
+            ledgerLines.push(`Item transferred to ${fullName(target)}: ${transferItem}; removed from inventory; trust +${trustDelta}.${rollText ? ` ${rollText}.` : ""}`);
+          }
+        }
       } else if (lower.match(/\b(steal|snatch|pickpocket|lift|palm|take .*from|slip .*pocket|borrow .*without)\b/)) {
         const roomPeople = mysteryPeopleInRoom(workingMystery(), currentRoom).filter((person) => person.id !== mystery.player.id) as MysteryNpc[];
         const target = mysteryTargetNpc(text, workingMystery(), currentRoom);
@@ -7109,6 +7389,7 @@ export default function App() {
               findables = findables.map((findable) => findable.id === difficulty.findableId ? { ...findable, collected: true } : findable);
             }
             npcs = applyMysteryTrustDelta(npcs, [target.id], target.substanceState === "drunk" || target.substanceState === "high" ? -1 : -4);
+            medalEvents = addMysteryMedalEvents(medalEvents, ["lightFingers"]);
             messages.push({ id: uid(), speaker: "GM", text: `Your attempt to steal succeeds. You take ${difficulty.item} from ${fullName(target)} without an open scene.`, roll: rollText });
             ledgerLines.push(`Successful theft: ${item}; difficulty ${difficulty.tier}; target trust adjusted.${rollText ? ` ${rollText}.` : ""}`);
           } else {
@@ -7137,21 +7418,21 @@ export default function App() {
         const roomPeople = mysteryPeopleInRoom(workingMystery(), currentRoom).filter((person) => person.id !== mystery.player.id) as MysteryNpc[];
         const baseSearchDifficulty: MysteryRollOutcome["tier"] = foundFindable?.searchDifficulty ?? (matchingMurder?.method.toLowerCase().includes("poison") || roomPeople.length > 2 ? "medium" : mystery.daytime === "Night" || mystery.daytime === "Midnight" ? "hard" : "easy");
         const searchCheck = rollResult?.check ?? "Search";
-        const searchFailureCount = foundFindable?.rollFailures?.[searchCheck] ?? 0;
+        const searchFailureCount = mysteryFindableFailureCount(foundFindable, searchCheck, mystery.day);
         const searchDifficulty = searchFailureCount > 0 ? mysteryIncreaseDifficulty(baseSearchDifficulty) : baseSearchDifficulty;
         const murderInSearchedRoom = murders.find((murder) => murder.roomId === currentRoom && (murder.discovered || dueTimeReached(murder)));
         const baseComposureDifficulty = murderInSearchedRoom ? mysteryMurderRoomComposureDifficulty(workingMystery(), murderInSearchedRoom) : undefined;
-        const composureFailureCount = foundFindable?.rollFailures?.Composure ?? 0;
+        const composureFailureCount = mysteryFindableFailureCount(foundFindable, "Composure", mystery.day);
         const composureDifficulty = baseComposureDifficulty ? (composureFailureCount > 0 ? mysteryIncreaseDifficulty(baseComposureDifficulty) : baseComposureDifficulty) : undefined;
-        const searchLocked = Boolean(foundFindable?.lockedChecks?.includes(searchCheck));
-        const composureLocked = Boolean(composureDifficulty && foundFindable?.lockedChecks?.includes("Composure"));
+        const searchLocked = mysteryFindableCheckIsLimited(foundFindable, searchCheck, mystery.day);
+        const composureLocked = Boolean(composureDifficulty && mysteryFindableCheckIsLimited(foundFindable, "Composure", mystery.day));
         const composureRoll = foundFindable && foundProof && composureDifficulty && !searchLocked && !composureLocked ? mysterySpecificRollOutcome("Composure", workingMystery()) : undefined;
         const composureRollText = mysteryRollText(composureRoll);
         const combinedRollText = [rollText, composureRollText].filter(Boolean).join(" | ") || undefined;
         const searchPassed = mysteryRollMeets(rollResult, searchDifficulty);
         const composurePassed = !composureDifficulty || mysteryRollMeets(composureRoll, composureDifficulty);
         if (foundFindable && foundProof && (searchLocked || composureLocked)) {
-          const line = `You already tried this twice, and failed. Try a different kind of action to uncover something.`;
+          const line = `You already tried this twice today, and failed. Try a different kind of action, or come back tomorrow when the room may have changed.`;
           messages.push({ id: uid(), speaker: "GM", text: line, roll: combinedRollText });
           const lockedNames = [searchLocked ? searchCheck : null, composureLocked ? "Composure" : null].filter(Boolean).join(" and ");
           ledgerLines.push(`Search locked out for ${foundFindable.name} using ${lockedNames}. Other checks remain possible.`);
@@ -7162,7 +7443,7 @@ export default function App() {
           findables = findables.map((findable) => findable.id === foundFindable.id ? { ...findable, collected: true } : findable);
           const composureNote = composureDifficulty ? " You keep steady despite the murder-room pressure." : "";
           const findLabel = "You find an item";
-          const discoveryDescription = mysteryFindableDiscoveryDescription(foundFindable);
+          const discoveryDescription = mysteryFindableDiscoveryDescriptionForMessage(foundFindable);
           const descriptionText = discoveryDescription ? ` ${discoveryDescription}` : "";
           messages.push({ id: uid(), speaker: "GM", text: `${findLabel}: ${discoveryName}.${descriptionText}${composureNote}`, roll: foundFindable.kind === "Proof" ? undefined : combinedRollText });
           ledgerLines.push(`${foundFindable.kind} discovered in ${mysteryRoomName(mystery, currentRoom)}: ${foundProof}. Difficulty ${searchDifficulty}; check ${searchCheck}${composureDifficulty ? `; composure difficulty ${composureDifficulty}` : ""}.`);
@@ -7173,14 +7454,15 @@ export default function App() {
               composureDifficulty && !composurePassed ? "Composure" : null
             ].filter(Boolean))) as MysteryCheckKind[];
             const rollFailures = { ...(foundFindable.rollFailures ?? {}) };
-            let lockedChecks = foundFindable.lockedChecks ?? [];
+            let reachedDailyLimit = false;
             failedChecks.forEach((check) => {
-              const nextFailures = (rollFailures[check] ?? 0) + 1;
-              rollFailures[check] = nextFailures;
-              if (nextFailures >= 2) lockedChecks = Array.from(new Set([...lockedChecks, check]));
+              const failureKey = mysteryFindableFailureKey(check, mystery.day);
+              const nextFailures = (rollFailures[failureKey] ?? 0) + 1;
+              rollFailures[failureKey] = nextFailures;
+              if (nextFailures >= 2) reachedDailyLimit = true;
             });
-            findables = findables.map((findable) => findable.id === foundFindable.id ? { ...findable, rollFailures, lockedChecks } : findable);
-            if (roomPeople.length > 0) npcs = applyMysteryTrustDelta(npcs, roomPeople.map((person) => person.id), failedChecks.some((check) => (rollFailures[check] ?? 0) >= 2) ? -4 : -2);
+            findables = findables.map((findable) => findable.id === foundFindable.id ? { ...findable, rollFailures } : findable);
+            if (roomPeople.length > 0) npcs = applyMysteryTrustDelta(npcs, roomPeople.map((person) => person.id), reachedDailyLimit ? -4 : -2);
           }
           const failReason = matchingMurder && foundProof
             ? `Whatever might be here, the house keeps it hidden for now.`
@@ -7193,6 +7475,11 @@ export default function App() {
           finished = true;
           won = true;
           summary = `${mystery.player.firstName} proved ${fullName(namedSuspect)} was tied to the Ravenwood murders.`;
+          medalEvents = addMysteryMedalEvents(medalEvents, [
+            "killerCaught",
+            "proofBearer",
+            ...(mystery.daytime === "Night" || mystery.daytime === "Midnight" ? ["midnightCloser" as const] : [])
+          ]);
           messages.push({ id: uid(), speaker: "GM", text: `${fullName(namedSuspect)} breaks under the weight of proof. The arrest is made before midnight can claim another name.`, roll: rollText });
           ledgerLines.push(`Win by arrest: accused ${fullName(namedSuspect)} with matching proof. Case finished.`);
         } else {
@@ -7211,6 +7498,11 @@ export default function App() {
         won = true;
         summary = `${mystery.player.firstName} killed ${fullName(namedSuspect)} and ended the murders.`;
         npcs = npcs.map((npc) => npc.id === namedSuspect.id ? { ...npc, alive: false } : npc);
+        medalEvents = addMysteryMedalEvents(medalEvents, [
+          "killerCaught",
+          "bloodyJustice",
+          ...(mystery.daytime === "Night" || mystery.daytime === "Midnight" ? ["midnightCloser" as const] : [])
+        ]);
         messages.push({ id: uid(), speaker: "GM", text: `${fullName(namedSuspect)} dies before the house can protect them. It is not clean justice, but Ravenwood survives.`, roll: rollText });
         ledgerLines.push(`Win by killing culprit: ${fullName(namedSuspect)} marked dead. Case finished.${rollText ? ` ${rollText}.` : ""}`);
       } else if (movementRoom && movementRoom.id !== mystery.currentRoomId) {
@@ -7238,6 +7530,8 @@ export default function App() {
       } else if (mysterySpeechIntent(text)) {
         const target = mysteryTargetNpc(text, workingMystery(), currentRoom);
         if (target) {
+          conversationNpcId = target.id;
+          conversationRoomId = currentRoom;
           const pendingWitnessMeeting = witnessInvitationNpcIds.includes(target.id) && !witnessKnowledgeDeliveredNpcIds.includes(target.id);
           const privateMeetingRoomId = mysteryPrivateMeetingRoomIdFor(target);
           const privateWitnessKnowledge = pendingWitnessMeeting && currentRoom === privateMeetingRoomId
@@ -7272,6 +7566,7 @@ export default function App() {
             witnessInvitationNpcIds = witnessInvitationNpcIds.filter((npcId) => npcId !== target.id);
             witnessKnowledgeDeliveredNpcIds = Array.from(new Set([...witnessKnowledgeDeliveredNpcIds, target.id]));
             aiMemory = [...aiMemory, `${fullName(target)} privately told ${mystery.player.firstName}: ${privateWitnessKnowledge.join(" ")}`].slice(-120);
+            medalEvents = addMysteryMedalEvents(medalEvents, ["witnessWhisperer"]);
             ledgerLines.push(`Witness knowledge delivered privately by ${fullName(target)} in ${mysteryRoomName(mystery, privateMeetingRoomId)}.`);
           }
           messages.push({
@@ -7283,9 +7578,16 @@ export default function App() {
           });
           ledgerLines.push(`Dialogue resolved with ${fullName(target)} using ${aiReply?.usedAi ? "AI" : "fallback"} reply. Trust delta ${trustDelta}; romance delta ${romanceDelta}; memory writes ${memoryWrites.length}.${rollText ? ` ${rollText}.` : ""}`);
         } else {
-          const dialogue = mysteryDialogueMessage(text, workingMystery(), namedSuspect);
-          messages.push({ ...dialogue, roll: rollText });
-          ledgerLines.push(`Dialogue had no reachable NPC in ${mysteryRoomName(mystery, currentRoom)}.${rollText ? ` ${rollText}.` : ""}`);
+          const namedUnavailable = namedSuspect && currentMysteryNpcRoomId(workingMystery(), namedSuspect) !== currentRoom;
+          if (namedUnavailable) {
+            const line = `${fullName(namedSuspect)} has stepped away from ${mysteryRoomName(mystery, currentRoom)}. They must have excused themselves while the room shifted around you.`;
+            messages.push({ id: uid(), speaker: "GM", text: line, roll: rollText, rich: mysteryNpcSegments(line, workingMystery()) });
+            ledgerLines.push(`Dialogue target unavailable: ${fullName(namedSuspect)} is now in ${mysteryRoomName(workingMystery(), currentMysteryNpcRoomId(workingMystery(), namedSuspect))}.${rollText ? ` ${rollText}.` : ""}`);
+          } else {
+            const dialogue = mysteryDialogueMessage(text, workingMystery(), namedSuspect);
+            messages.push({ ...dialogue, roll: rollText });
+            ledgerLines.push(`Dialogue had no reachable NPC in ${mysteryRoomName(mystery, currentRoom)}.${rollText ? ` ${rollText}.` : ""}`);
+          }
         }
       } else {
         const room = mysteryRoomName(mystery, currentRoom);
@@ -7426,6 +7728,8 @@ export default function App() {
         aiMemory,
         aiConversationSummaries,
         npcConversationMemory,
+        conversationNpcId,
+        conversationRoomId,
         hiddenInRoomId,
         hiddenFromNpcIds,
         witnessInvitationNpcIds,
@@ -7437,6 +7741,7 @@ export default function App() {
         discoveredProof,
         findables,
         inventory,
+        medalEvents,
         rollAttemptLedger,
         seriousCatchCount,
         finished,
@@ -7503,6 +7808,8 @@ export default function App() {
         npcs,
         murders,
         currentRoomId: roomId,
+        conversationNpcId: undefined,
+        conversationRoomId: undefined,
         closedDoorRoomId: undefined,
         closedDoorReturnRoomId: undefined,
         messages: splitMessages.visible,
@@ -7531,6 +7838,8 @@ export default function App() {
       return {
         ...mystery,
         currentRoomId: room.id,
+        conversationNpcId: undefined,
+        conversationRoomId: undefined,
         closedDoorRoomId: room.id,
         closedDoorReturnRoomId: mystery.currentRoomId === room.id ? mystery.closedDoorReturnRoomId : mystery.currentRoomId,
         messages: splitMessages.visible,
@@ -7643,10 +7952,18 @@ export default function App() {
 
   function mysteryMotiveGuessMatches(actual: string, guess: string): boolean {
     const stopWords = new Set(["about", "after", "again", "because", "being", "could", "everyone", "from", "have", "that", "their", "them", "they", "this", "with", "would", "stop", "keep", "silence"]);
-    const actualWords = actual.toLowerCase().match(/[a-z]+/g)?.filter((word) => word.length >= 5 && !stopWords.has(word)) ?? [];
-    const guessWords = new Set(guess.toLowerCase().match(/[a-z]+/g) ?? []);
+    const actualLower = actual.toLowerCase();
+    const guessLower = guess.toLowerCase();
+    const actualWords = actualLower.match(/[a-z]+/g)?.filter((word) => word.length >= 4 && !stopWords.has(word)) ?? [];
+    const guessWords = new Set(guessLower.match(/[a-z]+/g) ?? []);
     const matches = Array.from(new Set(actualWords)).filter((word) => guessWords.has(word));
-    return matches.length >= 2 || (actual.toLowerCase().includes("relationship") && /relationship|romance|dating|affair|lover|secret/i.test(guess)) || (actual.toLowerCase().includes("police") && /police|report|tell|confess/i.test(guess));
+    if (matches.length >= 2) return true;
+    if (/\b(debt|debts|gambling|money|owed|owing|borrowed|loan|ledger|unpaid|payback)\b/.test(actualLower) && /\b(debt|debts|gambling|money|owed|owe|loan|ledger|unpaid|payback|cash)\b/i.test(guessLower)) return true;
+    if (/\b(inheritance|will)\b/.test(actualLower) && /\b(inheritance|will|heir|estate)\b/i.test(guessLower)) return true;
+    if (/\b(forged|forgery|document|identity)\b/.test(actualLower) && /\b(forged|forgery|fake|document|identity|id)\b/i.test(guessLower)) return true;
+    if (/\b(blackmail|silence money)\b/.test(actualLower) && /\b(blackmail|blackmailed|silence|money)\b/i.test(guessLower)) return true;
+    if (/\b(stolen|stealing|theft|missing money|funds)\b/.test(actualLower) && /\b(stolen|stealing|theft|money|funds|embezzle|embezzlement)\b/i.test(guessLower)) return true;
+    return (actualLower.includes("relationship") && /relationship|romance|dating|affair|lover|secret/i.test(guessLower)) || (actualLower.includes("police") && /police|report|tell|confess/i.test(guessLower));
   }
 
   function mysteryProofGuessMatches(mystery: MysteryGame, murderIndex: number, proofName: string | null): boolean {
@@ -7670,7 +7987,7 @@ export default function App() {
     const proofSelected = Boolean(proofName);
     const proofTied = mysteryProofGuessMatches(mystery, murderIndex, proofName);
     const motiveClear = murder ? mysteryMotiveGuessMatches(murder.motive, motiveText) : false;
-    const selectedCount = [Boolean(murder), Boolean(accusedId), proofSelected, motiveText.trim().length >= 8].filter(Boolean).length;
+    const selectedCount = [Boolean(murder), Boolean(accusedId), proofSelected, motiveClear || motiveText.trim().length >= 4].filter(Boolean).length;
     const strongCount = [Boolean(murder), Boolean(accusedId), proofTied, motiveClear].filter(Boolean).length;
     const label = strongCount >= 4
       ? "Strong case"
@@ -7722,6 +8039,7 @@ export default function App() {
       let summary = mystery.summary;
       let lossPending = mystery.lossPending;
       let murdererAttackPending = mystery.murdererAttackPending;
+      let medalEvents = [...(mystery.medalEvents ?? [])];
       const messages: StoryMessage[] = [];
       const ledgerLines: string[] = [];
 
@@ -7734,6 +8052,19 @@ export default function App() {
           return candidate;
         });
         const newlyPreventedCount = murders.filter((candidate, index) => candidate.prevented && !previouslyPrevented.has(index)).length;
+        const newlySavedChild = murders.some((candidate, index) => candidate.prevented && !previouslyPrevented.has(index) && mystery.npcs.find((npc) => npc.id === candidate.victimId)?.isChild);
+        const targetVictimWasChild = Boolean(mystery.npcs.find((npc) => npc.id === targetMurder.victimId)?.isChild);
+        medalEvents = addMysteryMedalEvents(medalEvents, [
+          "killerCaught",
+          ...(proofCorrect ? ["proofBearer" as const] : []),
+          ...(motiveCorrect && !proofCorrect ? ["motiveReader" as const] : []),
+          ...(proofCorrect && motiveCorrect ? ["perfectSolve" as const] : []),
+          ...(newlyPreventedCount >= 1 ? ["oneLifeSaved" as const] : []),
+          ...(newlyPreventedCount >= 2 ? ["twoLivesSaved" as const] : []),
+          ...(newlySavedChild ? ["childSaved" as const] : []),
+          ...(targetVictimWasChild || newlySavedChild ? ["childMurdererCaught" as const] : []),
+          ...(mystery.daytime === "Night" || mystery.daytime === "Midnight" ? ["midnightCloser" as const] : [])
+        ]);
         const finalDay = mystery.day >= 13;
         const savedLine = newlyPreventedCount > 0 ? ` You saved ${newlyPreventedCount} ${newlyPreventedCount === 1 ? "life" : "lives"} in this mystery.` : "";
         const line = finalDay
@@ -7773,6 +8104,7 @@ export default function App() {
         messages: splitMessages.visible,
         journal: appendMysteryJournal(mystery.journal, splitMessages.archived),
         sanityLedger: [...(mystery.sanityLedger ?? []), ...ledgerLines].slice(-600),
+        medalEvents,
         finished,
         won,
         summary,
@@ -7791,6 +8123,7 @@ export default function App() {
         finished: true,
         won: false,
         murdererAttackPending: false,
+        medalEvents: addMysteryMedalEvents(mystery.medalEvents, ["tooRightToLive"]),
         summary: `${mystery.player.firstName} accused the true killer without enough proof. The murderer used the empty room after the accusation to kill them.`
       }));
     }
@@ -8130,6 +8463,24 @@ export default function App() {
     if (activeMysteryId === mysteryId) setActiveMysteryId(null);
   }
 
+  function openMysteryJournal(mysteryId: string | null, backScreen: Screen) {
+    if (mysteryId) setActiveMysteryId(mysteryId);
+    setMysteryJournalBackScreen(backScreen);
+    setScreen("mysteryJournal");
+  }
+
+  function pressMedal(definition: MysteryMedalDefinition, mysteryId?: string) {
+    if (!mysteryId) return;
+    const now = Date.now();
+    const previous = medalPressRef.current;
+    if (previous?.medalId === definition.id && previous.mysteryId === mysteryId && now - previous.time <= 480) {
+      medalPressRef.current = null;
+      openMysteryJournal(mysteryId, "medals");
+      return;
+    }
+    medalPressRef.current = { medalId: definition.id, mysteryId, time: now };
+  }
+
   function Shell({
     children,
     menuBackground = false,
@@ -8143,7 +8494,7 @@ export default function App() {
     onScroll?: React.ComponentProps<typeof ScrollView>["onScroll"];
     scrollEventThrottle?: number;
   }) {
-    const showMysteryBottomMenu = Boolean(activeMystery && ["mystery", "mysteryCharacter", "mysteryRelations", "mysteryFamilyTree", "mysteryMap", "mysteryJournal"].includes(screen));
+    const showMysteryBottomMenu = Boolean(activeMystery && !activeMystery.finished && ["mystery", "mysteryCharacter", "mysteryRelations", "mysteryFamilyTree", "mysteryMap", "mysteryJournal"].includes(screen));
     const backgroundSource = menuBackground ? menuBackgrounds[themeName] : appBackgroundForScreen(themeName, screen);
     const backgroundTint = menuBackground
       ? themeName === "dark" ? "rgba(4, 4, 7, 0.38)" : "rgba(255, 250, 242, 0.18)"
@@ -8450,7 +8801,7 @@ export default function App() {
         <Pressable onPress={() => setScreen("mysteryMap")} style={[styles.bottomMenuItem, { borderColor: C.line }]}>
           <BottomMenuLabel icon="candle" label="Map" />
         </Pressable>
-        <Pressable onPress={() => setScreen("mysteryJournal")} style={[styles.bottomMenuItem, { borderColor: C.line }]}>
+        <Pressable onPress={() => openMysteryJournal(null, "mystery")} style={[styles.bottomMenuItem, { borderColor: C.line }]}>
           <BottomMenuLabel icon="book" label="Journal" />
         </Pressable>
         <Pressable
@@ -8990,6 +9341,7 @@ export default function App() {
         <Button label="Start New Mystery" onPress={() => setScreen("mysteryBookSelect")} />
         <Button label="Load Game" onPress={() => setScreen("load")} />
         <Button label="Finished Games" onPress={() => setScreen("past")} />
+        <Button label="Medals Won" onPress={() => setScreen("medals")} />
         <Button label="Settings" onPress={() => setScreen("settings")} />
       </Shell>
     );
@@ -9866,8 +10218,6 @@ export default function App() {
   }
 
   if (screen === "mysteryJournal" && activeMystery) {
-    if (activeMystery.finished) return <MysteryFinishedReport mystery={activeMystery} />;
-
     const archiveMessagesByDay = activeMystery.journal.reduce<
       Record<number, StoryMessage[]>
     >((groups, message) => {
@@ -9908,8 +10258,8 @@ export default function App() {
       children: (
         <>
         <View style={styles.rowBetween}>
-          <Text style={[styles.titleSmall, { color: C.text }]}>{activeMystery.finished ? "Finished Game Report" : "Journal"}</Text>
-          <Button small label="Back" onPress={() => setScreen(activeMystery.finished ? "past" : "mystery")} />
+          <Text style={[styles.titleSmall, { color: C.text }]}>Journal</Text>
+          <Button small label="Back" onPress={() => setScreen(activeMystery.finished ? mysteryJournalBackScreen : "mystery")} />
         </View>
         {Card({
           children: (
@@ -10114,11 +10464,66 @@ export default function App() {
             <Text style={[styles.body, { color: C.text }]}>{mystery.summary ?? (mystery.won ? "The case was solved." : "The case ended unsolved.")}</Text>
             <Text style={[styles.rollText, { color: mystery.won ? C.good : C.warning }]}>{mystery.won ? "Won" : "Lost"}</Text>
             <View style={styles.row}>
-              <Button small label="Open Report" onPress={() => { setActiveMysteryId(mystery.id); setScreen("mysteryJournal"); }} />
+              <Button small label="Open Report" onPress={() => openMysteryJournal(mystery.id, "past")} />
               <Button small label="Delete Report" onPress={() => removeMystery(mystery.id)} variant="warning" />
             </View>
           </Card>
         ))}
+        <Button label="Back" onPress={() => setScreen("menu")} />
+      </Shell>
+    );
+  }
+
+  if (screen === "medals") {
+    const pastMysteries = mysteries.filter((mystery) => mystery.finished);
+    const medalRows = mysteryMedalDefinitions.map((definition) => {
+      const wonMysteries = pastMysteries.filter((mystery) => mysteryMedalIdsForFinishedGame(mystery).includes(definition.id));
+      return { definition, wonMysteries };
+    });
+    const wonMedalCount = medalRows.filter((row) => row.wonMysteries.length > 0).length;
+    return (
+      <Shell>
+        <View style={styles.rowBetween}>
+          <Text style={[styles.titleSmall, { color: C.text }]}>Medals Won</Text>
+          <Button small label="Back" onPress={() => setScreen("menu")} />
+        </View>
+        <Text style={[styles.subtitle, { color: C.dim }]}>
+          {wonMedalCount} of {mysteryMedalDefinitions.length} medals won from {pastMysteries.length} finished {pastMysteries.length === 1 ? "game" : "games"}.
+        </Text>
+        {pastMysteries.length === 0 ? <Text style={[styles.body, { color: C.dim }]}>No finished games yet. The medal list is ready for the next closed case.</Text> : null}
+        {medalRows.map(({ definition, wonMysteries }) => {
+          const won = wonMysteries.length > 0;
+          const targetMystery = wonMysteries[0];
+          return (
+            <Pressable
+              key={definition.id}
+              onPress={() => pressMedal(definition, targetMystery?.id)}
+              style={[
+                styles.card,
+                styles.medalCard,
+                {
+                  backgroundColor: C.panel,
+                  borderColor: won ? C.gold : C.line,
+                  opacity: won ? 1 : 0.64
+                }
+              ]}
+            >
+              <Image source={definition.icon} resizeMode="cover" style={[styles.medalIcon, !won && styles.medalIconLocked]} />
+              <View style={styles.medalTextColumn}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.heading, styles.medalTitle, won && styles.medalWonTitleGlow, { color: won ? C.gold : C.text }]}>{definition.title}</Text>
+                  <Text style={[styles.rollText, { color: won ? C.good : C.dim }]}>{won ? "Won" : "Not won yet"}</Text>
+                </View>
+                <Text style={[styles.body, { color: won ? C.text : C.dim }]}>{definition.description}</Text>
+                {won ? (
+                  <Text style={[styles.rollText, { color: C.dim }]}>
+                    Won in {wonMysteries.slice(0, 3).map((mystery) => mystery.title).join(", ")}{wonMysteries.length > 3 ? ` and ${wonMysteries.length - 3} more` : ""}.
+                  </Text>
+                ) : null}
+              </View>
+            </Pressable>
+          );
+        })}
         <Button label="Back" onPress={() => setScreen("menu")} />
       </Shell>
     );
@@ -10207,6 +10612,16 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   wrapRow: { flexDirection: "row", flexWrap: "wrap" },
   heading: { fontSize: 22, fontWeight: "700" },
+  medalTitle: { flex: 1, minWidth: 0 },
+  medalWonTitleGlow: {
+    textShadowColor: "#f0c45c",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10
+  },
+  medalCard: { flexDirection: "row", alignItems: "center", gap: 14 },
+  medalIcon: { width: 72, height: 72, borderRadius: 36 },
+  medalIconLocked: { opacity: 0.42 },
+  medalTextColumn: { flex: 1, minWidth: 0, gap: 4 },
   body: { fontSize: 16, lineHeight: 23, marginTop: 4 },
   clickableNpcName: { fontWeight: "800", textDecorationLine: "underline" },
   storyFrame: { borderWidth: 1, borderRadius: 8, overflow: "hidden", padding: 8, gap: 8 },
