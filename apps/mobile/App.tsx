@@ -967,6 +967,10 @@ function mysteryMedalIdsForFinishedGame(mystery: MysteryGame): MysteryMedalId[] 
   return mysteryMedalDefinitions.filter((definition) => ids.has(definition.id)).map((definition) => definition.id);
 }
 
+function mysteryMedalWinCountForFinishedGame(mystery: MysteryGame, medalId: MysteryMedalId): number {
+  return mysteryMedalIdsForFinishedGame(mystery).includes(medalId) ? 1 : 0;
+}
+
 function mysteryPlayerPortraitSubject(player: MysteryGame["player"]): PortraitSubject {
   const fallback = player.ravenwoodPortraitKey ? null : fallbackRavenwoodPlayerPortrait(player);
   return {
@@ -6330,6 +6334,25 @@ export default function App() {
     return "";
   }
 
+  function mysteryRomanceDeltaForTone(tone: ReturnType<typeof mysteryToneForText>, romanceAllowed: boolean, rollResult: MysteryRollOutcome | undefined, trust: number): number {
+    if (tone !== "flirt" || !romanceAllowed) return 0;
+    if (rollResult?.tier === "failed") return -2;
+    if (rollResult?.tier === "hard") return 7;
+    if (rollResult?.tier === "medium") return 4;
+    if (rollResult?.tier === "easy") return 2;
+    return trust >= 45 ? 2 : 1;
+  }
+
+  function mysteryRomanceShiftLine(npc: MysteryNpc, romanceDelta: number, romanceAllowed: boolean, tone: ReturnType<typeof mysteryToneForText>): string {
+    if (tone !== "flirt") return "";
+    if (!romanceAllowed) return ` ${fullName(npc)} does not welcome the romantic turn.`;
+    if (romanceDelta >= 6) return ` Romance with ${fullName(npc)} rises sharply.`;
+    if (romanceDelta >= 3) return ` Romance with ${fullName(npc)} warms.`;
+    if (romanceDelta >= 1) return ` Romance with ${fullName(npc)} stirs.`;
+    if (romanceDelta <= -2) return ` Romance with ${fullName(npc)} cools.`;
+    return ` ${fullName(npc)} notices the flirtation, but keeps their distance.`;
+  }
+
   function applyMysteryTrustDelta(npcs: MysteryNpc[], ids: string[], delta: number): MysteryNpc[] {
     const idSet = new Set(ids);
     return npcs.map((npc) => idSet.has(npc.id) ? { ...npc, trust: clamp(npc.trust + delta, 0, 100) } : npc);
@@ -6587,7 +6610,7 @@ export default function App() {
     const itemReaction = referencedItem ? mysteryInventoryItemNpcReaction(referencedItem, npc) : null;
     const romanceAllowed = mysteryCanPlayerHaveRomanceWithNpc(mystery.player, npc);
     const trustDelta = mysteryToneTrustDelta(text, rollResult, npc, mystery.player);
-    const romanceDelta = tone === "flirt" && romanceAllowed && rollResult && rollResult.tier !== "failed" ? (rollResult.tier === "hard" ? 6 : rollResult.tier === "medium" ? 3 : 1) : 0;
+    const romanceDelta = mysteryRomanceDeltaForTone(tone, romanceAllowed, rollResult, trust);
     const substance = mysterySubstanceBehavior(npc);
     let answer = "";
     const foodAnswer = mysteryFoodAnswer(text, mystery, npc, trust);
@@ -7550,9 +7573,10 @@ export default function App() {
           const proposedRomanceDelta = aiReply?.usedAi && typeof aiReply.romanceDelta === "number" ? aiReply.romanceDelta : dialogue.romanceDelta;
           const romanceDelta = romanceAllowed ? proposedRomanceDelta : Math.min(0, proposedRomanceDelta);
           const trustReaction = mysteryTrustShiftLine(target, trustDelta);
+          const romanceReaction = mysteryRomanceShiftLine(target, romanceDelta, romanceAllowed, mysteryToneForText(text));
           const responseText = privateWitnessKnowledge.length > 0
-            ? `${fullName(target)} closes the door before speaking. "${privateWitnessKnowledge.join(" ")} I came to you because I trust you enough to say it where no one else can hear."${trustReaction}`
-            : `${aiReply?.usedAi ? aiReply.text : dialogue.message.text}${trustReaction}`;
+            ? `${fullName(target)} closes the door before speaking. "${privateWitnessKnowledge.join(" ")} I came to you because I trust you enough to say it where no one else can hear."${trustReaction}${romanceReaction}`
+            : `${aiReply?.usedAi ? aiReply.text : dialogue.message.text}${trustReaction}${romanceReaction}`;
           const memoryWrites = mysteryNpcConversationMemoryWrites(text, workingMystery(), target, trustDelta, romanceDelta, rollResult, mysteryReferencedInventoryItem(text, workingMystery()));
           if (memoryWrites.length > 0) {
             const existingNpcMemory = npcConversationMemory[target.id] ?? [];
@@ -8769,10 +8793,17 @@ export default function App() {
     const muted = !npc.alive;
     const altered = npc.substanceState === "drunk" || npc.substanceState === "high";
     const trust = effectiveMysteryTrust(npc);
+    const showRomance = Boolean(activeMystery && npc.romanceRevealed && mysteryCanPlayerHaveRomanceWithNpc(activeMystery.player, npc));
     return (
       <View style={[styles.mysteryTrustPill, altered && styles.intoxicatedTrustPill, { borderColor: muted ? "#777" : altered ? "#ff2222" : C.good, backgroundColor: muted ? "rgba(70, 70, 74, 0.45)" : altered ? "rgba(255, 34, 34, 0.26)" : `${C.good}18` }]}>
         <Text style={[styles.mysteryTrustPillLabel, { color: muted ? "#c9c9c9" : altered ? "#ffdddd" : C.good }]}>{altered ? titleCase(npc.substanceState) : "Trust"}</Text>
         <Text style={[styles.mysteryTrustPillValue, { color: muted ? "#d2d2d2" : altered ? "#fff" : C.text }]}>{trust}</Text>
+        {showRomance ? (
+          <>
+            <Text style={[styles.mysteryTrustPillLabel, styles.mysteryRomancePillLabel, { color: muted ? "#c9c9c9" : C.gold }]}>Romance</Text>
+            <Text style={[styles.mysteryTrustPillValue, styles.mysteryRomancePillValue, { color: muted ? "#d2d2d2" : C.text }]}>{npc.romance}</Text>
+          </>
+        ) : null}
       </View>
     );
   }
@@ -10218,7 +10249,8 @@ export default function App() {
   }
 
   if (screen === "mysteryJournal" && activeMystery) {
-    const archiveMessagesByDay = activeMystery.journal.reduce<
+    const archiveSource = activeMystery.finished ? [...activeMystery.journal, ...activeMystery.messages] : activeMystery.journal;
+    const archiveMessagesByDay = archiveSource.reduce<
       Record<number, StoryMessage[]>
     >((groups, message) => {
       const day = message.archiveDay ?? 1;
@@ -10234,6 +10266,27 @@ export default function App() {
     const archiveDays = Object.keys(archiveMessagesByDay)
       .map(Number)
       .sort((a, b) => b - a);
+
+    const isClosedCaseReport = activeMystery.finished;
+    const happenedMurders = activeMystery.murders.filter((murder) => mysteryMurderTookPlace(activeMystery, murder) || murder.discovered || murder.solved);
+    const preventedMurders = activeMystery.murders.filter((murder) => murder.prevented);
+    const solvedMurders = activeMystery.murders.filter((murder) => murder.solved);
+    const closedCaseMedals = mysteryMedalIdsForFinishedGame(activeMystery)
+      .map((medalId) => mysteryMedalDefinitions.find((definition) => definition.id === medalId)?.title)
+      .filter(Boolean) as string[];
+    const collectedProofItems = activeMystery.findables
+      .filter((findable) => findable.kind === "Proof" && (findable.collected || activeMystery.discoveredProof.includes(findable.proofText ?? findable.description)))
+      .map((findable) => mysteryPlayerFacingFindableName(findable));
+    const livingLoveInterest = activeMystery.npcs.find((npc) => npc.alive && npc.romance >= 65 && mysteryCanPlayerHaveRomanceWithNpc(activeMystery.player, npc));
+    const lostLoveInterest = activeMystery.npcs.find((npc) => !npc.alive && npc.romance >= 65 && mysteryCanPlayerHaveRomanceWithNpc(activeMystery.player, npc));
+    const closedCaseStats = [
+      { label: "Outcome", value: activeMystery.won ? "Solved" : "Unsolved" },
+      { label: "Murders", value: String(happenedMurders.length) },
+      { label: "Solved", value: String(solvedMurders.length) },
+      { label: "Lives Saved", value: String(preventedMurders.length) },
+      { label: "Evidence", value: String(collectedProofItems.length) },
+      { label: "Medals", value: String(closedCaseMedals.length) }
+    ];
 
     const murderDetails = activeMystery.murders.map((murder, index) => {
       const proofItems = activeMystery.findables
@@ -10258,60 +10311,127 @@ export default function App() {
       children: (
         <>
         <View style={styles.rowBetween}>
-          <Text style={[styles.titleSmall, { color: C.text }]}>Journal</Text>
+          <Text style={[styles.titleSmall, { color: C.text }]}>{isClosedCaseReport ? "Closed Case Report" : "Journal"}</Text>
           <Button small label="Back" onPress={() => setScreen(activeMystery.finished ? mysteryJournalBackScreen : "mystery")} />
         </View>
-        {Card({
-          children: (
-            <>
-              <Text style={[styles.heading, { color: C.text }]}>
-                Your Notes
-              </Text>
-
-              <TextInput
-                value={activeMystery.journalNotes}
-                onChangeText={(journalNotes) =>
-                  patchMystery((mystery) => ({
-                    ...mystery,
-                    journalNotes: journalNotes.slice(0, 3000)
-                  }))
-                }
-                placeholder="Write your own suspicions, clues, and theories..."
-                placeholderTextColor={C.dim}
-                multiline
-                maxLength={3000}
-                style={[
-                  styles.input,
-                  styles.notesInput,
-                  {
-                    backgroundColor: C.panel2,
-                    borderColor: C.line,
-                    color: C.text
-                  }
-                ]}
-              />
-            </>
-          )
-        })}
-        {Card({
-          children: (
-            <>
-              <Text style={[styles.heading, styles.gameHiddenText]}>
-                Murder Details
-              </Text>
-              {murderDetails.map((line) => (
-                <Text key={line} style={[styles.body, styles.gameHiddenText]}>
-                  {line}
-                </Text>
+        {isClosedCaseReport ? (
+          <>
+            <View style={[styles.closedReportHero, { backgroundColor: C.panel, borderColor: activeMystery.won ? C.gold : C.warning }]}>
+              <Text style={[styles.label, { color: activeMystery.won ? C.gold : C.warning }]}>{activeMystery.won ? "Case Closed" : "Case Lost"}</Text>
+              <Text style={[styles.heading, styles.closedReportHeroTitle, { color: C.text }]}>{activeMystery.title}</Text>
+              <Text style={[styles.body, { color: C.text }]}>{activeMystery.summary ?? (activeMystery.won ? "The case was solved." : "The case ended unsolved.")}</Text>
+            </View>
+            <View style={styles.closedReportStatGrid}>
+              {closedCaseStats.map((stat) => (
+                <View key={stat.label} style={[styles.closedReportStatBox, { backgroundColor: C.panel, borderColor: C.line }]}>
+                  <Text style={[styles.closedReportStatValue, { color: C.text }]}>{stat.value}</Text>
+                  <Text style={[styles.closedReportStatLabel, { color: C.dim }]}>{stat.label}</Text>
+                </View>
               ))}
-            </>
-          )
-        })}
+            </View>
+            <Text style={[styles.heading, { color: C.text }]}>At a Glance</Text>
+            {Card({
+              children: (
+                <>
+                  <Text style={[styles.body, { color: C.text }]}>Detective: {activeMystery.player.firstName} {activeMystery.player.familyName}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Final time: Day {activeMystery.day} {activeMystery.daytime}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Saved residents: {preventedMurders.length > 0 ? preventedMurders.map((murder) => mysteryNpcName(activeMystery, murder.victimId)).join(", ") : "None"}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Love story: {livingLoveInterest ? `${fullName(livingLoveInterest)} survived.` : lostLoveInterest ? `${fullName(lostLoveInterest)} was lost.` : "None recorded."}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Medals won: {closedCaseMedals.length > 0 ? closedCaseMedals.join(", ") : "None"}</Text>
+                </>
+              )
+            })}
+            <Text style={[styles.heading, { color: C.text }]}>Murders</Text>
+            {activeMystery.murders.map((murder, index) => {
+              const proofItems = activeMystery.findables
+                .filter((findable) => findable.kind === "Proof" && findable.relatedMurderIndex === index)
+                .map((findable) => mysteryPlayerFacingFindableName(findable));
+              const witness = murder.witnessId ? activeMystery.npcs.find((npc) => npc.id === murder.witnessId) : undefined;
+              const status = murder.prevented ? "Prevented" : murder.solved ? "Solved" : mysteryMurderTookPlace(activeMystery, murder) ? "Occurred" : "Planned";
+              return (
+                <Card key={`closed-murder-${index}`}>
+                  <View style={styles.rowBetween}>
+                    <Text style={[styles.heading, { color: C.text }]}>Murder {index + 1}</Text>
+                    <Text style={[styles.rollText, { color: murder.prevented ? C.good : murder.solved ? C.gold : C.warning }]}>{status}</Text>
+                  </View>
+                  <Text style={[styles.body, { color: C.text }]}>Victim: {mysteryNpcName(activeMystery, murder.victimId)}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Killer: {mysteryNpcName(activeMystery, murder.killerId)}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Time and place: Day {murder.day} {murder.daytime}, {mysteryRoomName(activeMystery, murder.roomId)}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Method: {cleanSentenceEnd(murder.method)}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Motive: {cleanSentenceEnd(murder.motive)}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Proof: {proofItems.length > 0 ? proofItems.join(", ") : "No proof item recorded."}</Text>
+                  <Text style={[styles.body, { color: C.text }]}>Witness: {witness ? fullName(witness) : "None recorded"}</Text>
+                </Card>
+              );
+            })}
+            <Text style={[styles.heading, { color: C.text }]}>Evidence Collected</Text>
+            {Card({
+              children: collectedProofItems.length > 0 ? (
+                <>
+                  {collectedProofItems.map((item) => (
+                    <Text key={item} style={[styles.body, { color: C.text }]}>{item}</Text>
+                  ))}
+                </>
+              ) : (
+                <Text style={[styles.body, { color: C.dim }]}>No proof items collected.</Text>
+              )
+            })}
+          </>
+        ) : (
+          <>
+            {Card({
+              children: (
+                <>
+                  <Text style={[styles.heading, { color: C.text }]}>
+                    Your Notes
+                  </Text>
+
+                  <TextInput
+                    value={activeMystery.journalNotes}
+                    onChangeText={(journalNotes) =>
+                      patchMystery((mystery) => ({
+                        ...mystery,
+                        journalNotes: journalNotes.slice(0, 3000)
+                      }))
+                    }
+                    placeholder="Write your own suspicions, clues, and theories..."
+                    placeholderTextColor={C.dim}
+                    multiline
+                    maxLength={3000}
+                    style={[
+                      styles.input,
+                      styles.notesInput,
+                      {
+                        backgroundColor: C.panel2,
+                        borderColor: C.line,
+                        color: C.text
+                      }
+                    ]}
+                  />
+                </>
+              )
+            })}
+            {Card({
+              children: (
+                <>
+                  <Text style={[styles.heading, styles.gameHiddenText]}>
+                    Murder Details
+                  </Text>
+                  {murderDetails.map((line) => (
+                    <Text key={line} style={[styles.body, styles.gameHiddenText]}>
+                      {line}
+                    </Text>
+                  ))}
+                </>
+              )
+            })}
+          </>
+        )}
         <Text style={[styles.heading, { color: C.text }]}>
-          Story Archive
+          {isClosedCaseReport ? "Original Journal Text" : "Story Archive"}
         </Text>
 
-        {activeMystery.journal.length === 0 ? (
+        {archiveSource.length === 0 ? (
           <Text style={[styles.subtitle, { color: C.dim }]}>
             Older story text will appear here after more than five responses.
           </Text>
@@ -10478,9 +10598,11 @@ export default function App() {
     const pastMysteries = mysteries.filter((mystery) => mystery.finished);
     const medalRows = mysteryMedalDefinitions.map((definition) => {
       const wonMysteries = pastMysteries.filter((mystery) => mysteryMedalIdsForFinishedGame(mystery).includes(definition.id));
-      return { definition, wonMysteries };
+      const winCount = pastMysteries.reduce((count, mystery) => count + mysteryMedalWinCountForFinishedGame(mystery, definition.id), 0);
+      return { definition, wonMysteries, winCount };
     });
     const wonMedalCount = medalRows.filter((row) => row.wonMysteries.length > 0).length;
+    const totalMedalWins = medalRows.reduce((count, row) => count + row.winCount, 0);
     return (
       <Shell>
         <View style={styles.rowBetween}>
@@ -10488,11 +10610,11 @@ export default function App() {
           <Button small label="Back" onPress={() => setScreen("menu")} />
         </View>
         <Text style={[styles.subtitle, { color: C.dim }]}>
-          {wonMedalCount} of {mysteryMedalDefinitions.length} medals won from {pastMysteries.length} finished {pastMysteries.length === 1 ? "game" : "games"}.
+          {wonMedalCount} of {mysteryMedalDefinitions.length} medal types won, {totalMedalWins} total badge {totalMedalWins === 1 ? "win" : "wins"} from {pastMysteries.length} finished {pastMysteries.length === 1 ? "game" : "games"}.
         </Text>
         {pastMysteries.length === 0 ? <Text style={[styles.body, { color: C.dim }]}>No finished games yet. The medal list is ready for the next closed case.</Text> : null}
-        {medalRows.map(({ definition, wonMysteries }) => {
-          const won = wonMysteries.length > 0;
+        {medalRows.map(({ definition, wonMysteries, winCount }) => {
+          const won = winCount > 0;
           const targetMystery = wonMysteries[0];
           return (
             <Pressable
@@ -10512,7 +10634,7 @@ export default function App() {
               <View style={styles.medalTextColumn}>
                 <View style={styles.rowBetween}>
                   <Text style={[styles.heading, styles.medalTitle, won && styles.medalWonTitleGlow, { color: won ? C.gold : C.text }]}>{definition.title}</Text>
-                  <Text style={[styles.rollText, { color: won ? C.good : C.dim }]}>{won ? "Won" : "Not won yet"}</Text>
+                  <Text style={[styles.rollText, { color: won ? C.good : C.dim }]}>{won ? `Won ${winCount} x` : "Not won yet"}</Text>
                 </View>
                 <Text style={[styles.body, { color: won ? C.text : C.dim }]}>{definition.description}</Text>
                 {won ? (
@@ -10622,6 +10744,12 @@ const styles = StyleSheet.create({
   medalIcon: { width: 72, height: 72, borderRadius: 36 },
   medalIconLocked: { opacity: 0.42 },
   medalTextColumn: { flex: 1, minWidth: 0, gap: 4 },
+  closedReportHero: { borderWidth: 1, borderRadius: 8, padding: 16, gap: 8 },
+  closedReportHeroTitle: { fontSize: 28, lineHeight: 34 },
+  closedReportStatGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  closedReportStatBox: { width: "31.5%", minWidth: 98, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  closedReportStatValue: { fontSize: 25, lineHeight: 30, fontWeight: "800" },
+  closedReportStatLabel: { fontSize: 10, lineHeight: 13, fontWeight: "900", textTransform: "uppercase", textAlign: "center" },
   body: { fontSize: 16, lineHeight: 23, marginTop: 4 },
   clickableNpcName: { fontWeight: "800", textDecorationLine: "underline" },
   storyFrame: { borderWidth: 1, borderRadius: 8, overflow: "hidden", padding: 8, gap: 8 },
@@ -10697,6 +10825,8 @@ const styles = StyleSheet.create({
   intoxicatedTrustPill: { shadowColor: "#ff2222", shadowOpacity: 0.45, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
   mysteryTrustPillLabel: { fontSize: 8, lineHeight: 10, fontWeight: "900", textTransform: "uppercase" },
   mysteryTrustPillValue: { fontSize: 18, lineHeight: 20, fontWeight: "800" },
+  mysteryRomancePillLabel: { marginTop: 4 },
+  mysteryRomancePillValue: { fontSize: 16, lineHeight: 18 },
   // Purple is debug/testing only; red is discoverable information hidden in real play.
   gameHiddenText: { color: "#b97cff", fontWeight: "800" },
   discoverableHiddenText: { color: "#ff4d4d", fontWeight: "800" },
