@@ -5,3 +5,5 @@ dist/
 *.log
 coverage/
 .codex-backups/
+apps/mobile/expo-go*qr*.png
+apps/mobile/duplicate_*_candidates.txt
