@@ -6,4 +6,6 @@ dist/
 coverage/
 .codex-backups/
 apps/mobile/expo-go*qr*.png
+apps/mobile/expo-phone-qr.*
+apps/mobile/expo-phone-url.txt
 apps/mobile/duplicate_*_candidates.txt

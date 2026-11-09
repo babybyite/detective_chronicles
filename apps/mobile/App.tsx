@@ -3,6 +3,7 @@ import {
   Animated,
   Image,
   ImageBackground,
+  InteractionManager,
   Modal,
   SafeAreaView,
   ScrollView,
@@ -557,6 +558,19 @@ const ravenwoodCompassGlowLayers: ImageSourcePropType[] = [
   require("./assets/ravenwood/icons/optimized/compass_glow_4.png"),
   require("./assets/ravenwood/icons/optimized/compass_glow_5.png")
 ];
+const ravenwoodBackgroundSources = [
+  ...Object.values(menuBackgrounds),
+  ...Object.values(appBackgrounds).flat()
+];
+const ravenwoodCoreImageSources = ravenwoodUniqueSources([
+  ...ravenwoodBackgroundSources,
+  ...Object.values(iconAssets).map((asset) => asset.source),
+  ravenwoodCompassIcon,
+  ...ravenwoodCompassGlowLayers,
+  ...ravenwoodFogLayers,
+  ...mysteryMedalDefinitions.map((definition) => definition.icon)
+]);
+const ravenwoodDetectiveImageSources = ravenwoodUniqueSources(ravenwoodPlayerPortraitAssets.map((asset) => asset.source));
 
 type MysteryRollOutcome = {
   check: MysteryCheckKind;
@@ -590,14 +604,86 @@ const ravenwoodPortraitByKey: Record<string, RavenwoodGuestPortraitAsset> = Obje
   [...ravenwoodGuestPortraitAssets, ...ravenwoodStaffPortraitAssets, ...ravenwoodPlayerPortraitAssets].map((asset) => [asset.key, asset])
 );
 
-function ravenwoodPrefetchSource(source?: ImageSourcePropType | null) {
-  if (!source) return;
+const RAVENWOOD_PREFETCH_BATCH_SIZE = 8;
+const RAVENWOOD_WARM_IMAGE_LIMIT = 72;
+const ravenwoodPrefetchQueue: string[] = [];
+const ravenwoodPrefetchQueued = new Set<string>();
+const ravenwoodPrefetchDone = new Set<string>();
+let ravenwoodPrefetchRunning = false;
+
+function ravenwoodAssetUri(source?: ImageSourcePropType | null): string | undefined {
+  if (!source) return undefined;
   const resolved = Image.resolveAssetSource(source);
-  if (resolved?.uri) void Image.prefetch(resolved.uri).catch(() => undefined);
+  return resolved?.uri;
+}
+
+function ravenwoodSourceKey(source?: ImageSourcePropType | null): string | undefined {
+  return ravenwoodAssetUri(source) ?? (source ? String(source) : undefined);
+}
+
+function ravenwoodUniqueSources(sources: Array<ImageSourcePropType | undefined | null>): ImageSourcePropType[] {
+  const seen = new Set<string>();
+  const unique: ImageSourcePropType[] = [];
+  for (const source of sources) {
+    if (!source) continue;
+    const key = ravenwoodSourceKey(source);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(source);
+  }
+  return unique;
+}
+
+function ravenwoodPumpPrefetchQueue() {
+  if (ravenwoodPrefetchRunning) return;
+  ravenwoodPrefetchRunning = true;
+  const runBatch = () => {
+    const batch = ravenwoodPrefetchQueue.splice(0, RAVENWOOD_PREFETCH_BATCH_SIZE);
+    if (batch.length === 0) {
+      ravenwoodPrefetchRunning = false;
+      return;
+    }
+    void Promise.allSettled(
+      batch.map((uri) =>
+        Image.prefetch(uri)
+          .then((ok) => {
+            if (ok) ravenwoodPrefetchDone.add(uri);
+          })
+          .catch(() => undefined)
+      )
+    ).then(() => {
+      if (ravenwoodPrefetchQueue.length > 0) {
+        setTimeout(runBatch, 24);
+      } else {
+        ravenwoodPrefetchRunning = false;
+      }
+    });
+  };
+  setTimeout(runBatch, 0);
 }
 
 function ravenwoodPrefetchSources(sources: Array<ImageSourcePropType | undefined | null>) {
-  sources.forEach(ravenwoodPrefetchSource);
+  for (const source of ravenwoodUniqueSources(sources)) {
+    const uri = ravenwoodAssetUri(source);
+    if (!uri || ravenwoodPrefetchQueued.has(uri) || ravenwoodPrefetchDone.has(uri)) continue;
+    ravenwoodPrefetchQueued.add(uri);
+    ravenwoodPrefetchQueue.push(uri);
+  }
+  ravenwoodPumpPrefetchQueue();
+}
+
+function ravenwoodMergeWarmSources(current: ImageSourcePropType[], next: ImageSourcePropType[], limit = RAVENWOOD_WARM_IMAGE_LIMIT): ImageSourcePropType[] {
+  const seen = new Set<string>();
+  const merged: ImageSourcePropType[] = [];
+  for (const source of [...next, ...current]) {
+    const key = ravenwoodSourceKey(source);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(source);
+    if (merged.length >= limit) break;
+  }
+  if (merged.length === current.length && merged.every((source, index) => ravenwoodSourceKey(source) === ravenwoodSourceKey(current[index]))) return current;
+  return merged;
 }
 
 type PortraitSubject = {
@@ -5737,6 +5823,7 @@ export default function App() {
   const [ravenwoodAiStatus, setRavenwoodAiStatus] = useState<RavenwoodModelStatus | null>(null);
   const [ravenwoodAiTestInput, setRavenwoodAiTestInput] = useState("Ask Nadine what she noticed after dinner.");
   const [ravenwoodAiTestOutput, setRavenwoodAiTestOutput] = useState("");
+  const [ravenwoodWarmSources, setRavenwoodWarmSources] = useState<ImageSourcePropType[]>([]);
   const [expandedMysteryArchiveDays, setExpandedMysteryArchiveDays] = useState<Record<number, boolean>>({});
   const [mysteryTreeViewport, setMysteryTreeViewport] = useState({ width: 0, height: 0 });
   const [solveMurderIndex, setSolveMurderIndex] = useState<number | null>(null);
@@ -5763,8 +5850,9 @@ export default function App() {
   const compassGlow = useRef(new Animated.Value(0)).current;
   const mapFogMotion = useRef(new Animated.Value(0)).current;
   const C = themes[themeName];
-  const detectiveCardWidth = Math.min(340, Math.max(268, windowWidth - 44));
-  const detectiveCardHeight = Math.min(530, Math.max(420, windowHeight - 230));
+  const detectiveSelectMinHeight = Math.max(0, windowHeight - 40);
+  const detectiveSheetHeight = Math.max(400, windowHeight - 178);
+  const detectiveAgeChoiceWidth = Math.min(82, Math.max(70, (windowWidth - 92) / 4));
   const activeMystery = useMemo(() => mysteries.find((mystery) => mystery.id === activeMysteryId) ?? null, [activeMysteryId, mysteries]);
   const activeMysteryVisibleMessageKey = activeMystery?.messages.slice(-5).map((message) => message.id).join("|") ?? "";
   const selectedMysteryDetective = useMemo(
@@ -5800,35 +5888,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    ravenwoodPrefetchSources([
-      menuBackgrounds[themeName],
+    return warmRavenwoodSources([
+      ...ravenwoodCoreImageSources,
       appBackgroundForScreen(themeName, screen),
-      ravenwoodCompassIcon,
-      iconAssets.bag.source,
-      iconAssets.shadowPortrait.source,
-      iconAssets.candle.source,
-      iconAssets.book.source,
-      iconAssets.magnifier.source,
-      iconAssets.pocketWatch.source,
-      iconAssets.lockpicks.source,
-      iconAssets.key.source,
-      ...ravenwoodCompassGlowLayers,
-      ...ravenwoodFogLayers
+      ...(screen === "mysteryDetectiveSelect" || screen === "mysteryPortraitSelect" ? ravenwoodDetectiveImageSources : [])
     ]);
   }, [screen, themeName]);
 
   useEffect(() => {
     if (!activeMystery) return;
-    const roomPeople = mysteryPeopleInRoom(activeMystery, activeMystery.currentRoomId).filter((person) => person.id !== activeMystery.player.id) as MysteryNpc[];
     const playerPortrait = activeMystery.player.ravenwoodPortraitKey ? ravenwoodPortraitByKey[activeMystery.player.ravenwoodPortraitKey]?.source : undefined;
-    const residentPortraits = [...mysterySeenResidents(activeMystery), ...roomPeople]
+    const residentPortraits = activeMystery.npcs
       .map((npc) => npc.ravenwoodPortraitKey ? ravenwoodPortraitByKey[npc.ravenwoodPortraitKey]?.source : undefined);
-    ravenwoodPrefetchSources([
+    const inventoryIcons = [
+      ...activeMystery.inventory.map((item) => mysteryInventoryIconFor(item)),
+      ...activeMystery.discoveredProof.map((item) => mysteryInventoryIconFor(item)),
+      ...activeMystery.findables.filter((item) => item.collected).map((item) => mysteryInventoryIconFor(item.name))
+    ].map((icon) => icon ? iconAssets[icon]?.source : undefined);
+    return warmRavenwoodSources([
       ravenwoodRoomBackgroundFor(activeMystery, themeName),
       playerPortrait,
-      ...residentPortraits
+      ...residentPortraits,
+      ...inventoryIcons
     ]);
-  }, [activeMystery?.id, activeMystery?.currentRoomId, activeMysterySeenKey, themeName]);
+  }, [activeMystery?.id, activeMystery?.currentRoomId, activeMysterySeenKey, activeMystery?.inventory.length, activeMystery?.discoveredProof.length, themeName]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -5948,17 +6031,22 @@ export default function App() {
   }, []);
 
   function chooseMysteryDetective(profileId: string) {
-    const scrollX = detectiveCarouselOffsetRef.current;
     setSelectedMysteryDetectiveId(profileId);
     setSelectedMysteryDetectiveAge(24);
-    requestAnimationFrame(() => {
-      detectiveCarouselRef.current?.scrollTo({ x: scrollX, y: 0, animated: false });
-    });
   }
 
   function confirmMysteryDetective() {
-    setSelectedMysteryDetectiveAge(24);
-    setScreen("mysteryPortraitSelect");
+    startMystery();
+  }
+
+  function warmRavenwoodSources(sources: Array<ImageSourcePropType | undefined | null>, visibleLimit = RAVENWOOD_WARM_IMAGE_LIMIT) {
+    const unique = ravenwoodUniqueSources(sources);
+    if (unique.length === 0) return undefined;
+    const task = InteractionManager.runAfterInteractions(() => {
+      ravenwoodPrefetchSources(unique);
+      setRavenwoodWarmSources((current) => ravenwoodMergeWarmSources(current, unique, visibleLimit));
+    });
+    return () => task.cancel();
   }
 
   function startMystery() {
@@ -6285,6 +6373,50 @@ export default function App() {
       findable.proofText
     ].forEach((text) => mysteryNpcIdsMentionedInText(mystery, text).forEach((npcId) => ids.add(npcId)));
     return Array.from(ids);
+  }
+
+  function mysteryObservationFieldsForNpc(mystery: MysteryGame, npc: MysteryNpc, rollResult: MysteryRollOutcome | undefined, stealthy: boolean, index: number): MysteryNpcKnowledgeField[] {
+    const fields = new Set<MysteryNpcKnowledgeField>(["name"]);
+    const medium = mysteryRollMeets(rollResult, "medium");
+    const hard = mysteryRollMeets(rollResult, "hard");
+    const mealTime = mystery.daytime === "Breakfast" || mystery.daytime === "Lunch";
+    const publicRoleVisible = npc.role === "Staff" || mealTime || currentMysteryNpcRoomId(mystery, npc) === mystery.currentRoomId;
+    if (medium) {
+      if (publicRoleVisible) fields.add("occupation");
+      if (npc.role === "Guest" && (mealTime || npc.currentStay.toLowerCase().includes("arrived"))) fields.add("reasonOfStay");
+      if (npc.substanceState !== "sober") fields.add("substance");
+    }
+    if (hard) {
+      fields.add("room");
+      if (npc.role === "Guest") fields.add(index % 2 === 0 ? "currentStay" : "plannedStay");
+      if (!npc.isChild && (stealthy || index % 2 === 0)) fields.add("familyStatus");
+      if (!npc.isChild && npc.substancePreference !== "none" && (stealthy || npc.substanceState !== "sober")) fields.add("substance");
+    }
+    if (hard && stealthy && index === 0 && npc.secret) fields.add("secret");
+    return Array.from(fields);
+  }
+
+  function mysteryObservationFactLabels(fields: MysteryNpcKnowledgeField[]): string {
+    const labels: Record<MysteryNpcKnowledgeField, string> = {
+      name: "name",
+      occupation: "occupation",
+      reasonOfStay: "reason for stay",
+      familyStatus: "family situation",
+      education: "education",
+      currentStay: "current stay",
+      plannedStay: "planned stay",
+      previousStay: "previous stay",
+      secret: "private clue",
+      substance: "substance clue",
+      room: "room/station"
+    };
+    return fields.filter((field) => field !== "name").map((field) => labels[field]).join(", ");
+  }
+
+  function mysteryObservationLineForNpc(mystery: MysteryGame, npc: MysteryNpc, fields: MysteryNpcKnowledgeField[]): string {
+    const facts = mysteryObservationFactLabels(fields);
+    if (!facts) return fullName(npc);
+    return `${fullName(npc)} (${facts})`;
   }
 
   function mysteryPrivateMeetingRoomIdFor(npc: MysteryNpc): string {
@@ -6855,6 +6987,39 @@ export default function App() {
     return Array.from(new Set(writes)).slice(0, 3);
   }
 
+  function mysteryHardcodedFlirtAnswer(text: string, mystery: MysteryGame, npc: MysteryNpc, romanceAllowed: boolean, rollResult?: MysteryRollOutcome): string {
+    const lower = text.toLowerCase();
+    if (!romanceAllowed) {
+      if (npc.age < 18 || mysteryPlayerAge(mystery.player) < 18) return "No. That is not the kind of conversation we are having.";
+      return "That is not welcome. Keep your attention on the case.";
+    }
+    const trust = effectiveMysteryTrust(npc);
+    const style = lower.includes("dance")
+      ? "dance"
+      : lower.includes("kiss")
+        ? "kiss"
+        : lower.includes("beautiful") || lower.includes("handsome") || lower.includes("compliment")
+          ? "compliment"
+          : "flirt";
+    if (rollResult?.tier === "failed") {
+      return style === "kiss"
+        ? "That is much too bold for Ravenwood. Try solving a murder before you lean closer."
+        : "A pretty line, but badly timed. Ravenwood makes even charm sound suspicious.";
+    }
+    if (rollResult?.tier === "hard" || trust >= 55) {
+      if (style === "dance") return "A dance, here? Reckless. Ask again when the music is not only in your head.";
+      if (style === "kiss") return "Careful. If you look at me like that again, I may forget this house is dangerous.";
+      if (style === "compliment") return "You noticed that? Then perhaps your eyes are useful for more than evidence.";
+      return "You are trouble, detective. Unfortunately, I have always had a weakness for trouble.";
+    }
+    if (rollResult?.tier === "medium" || trust >= 25) {
+      if (style === "dance") return "Not here. But I will remember that you asked.";
+      if (style === "compliment") return "That is almost charming. Almost.";
+      return "You choose a dangerous hour to flirt. I am listening, but only barely.";
+    }
+    return "Charm is cheap at Ravenwood. Earn a little trust first.";
+  }
+
   function mysteryResidentReply(text: string, mystery: MysteryGame, npc: MysteryNpc, rollResult?: MysteryRollOutcome): { message: StoryMessage; trustDelta: number; romanceDelta: number } {
     const trust = effectiveMysteryTrust(npc);
     const tone = mysteryToneForText(text);
@@ -6886,11 +7051,7 @@ export default function App() {
         ? "You are frighteningly direct. I will answer because I believe you mean to finish this."
         : "Do not mistake this hotel for an empty house. People hear things through these walls.";
     } else if (tone === "flirt") {
-      answer = !romanceAllowed
-        ? "That is not appropriate. Ask about the case if you must."
-        : trust > 45 || rollResult?.tier === "hard"
-          ? "You choose a dangerous hour to be charming. Still, I am listening."
-          : "Charm is cheap at Ravenwood. Trust costs more.";
+      answer = mysteryHardcodedFlirtAnswer(text, mystery, npc, romanceAllowed, rollResult);
     } else if (tone === "kind") {
       answer = "That is the first decent tone I have heard in this house all day. Ask, then.";
     } else if (tone === "rude" || tone === "accuse") {
@@ -7113,6 +7274,7 @@ export default function App() {
   }
 
   function mysterySpeechIntent(text: string): boolean {
+    if (/\b(flirt|romance|romantic|kiss|date|dance|seduce|wink|blush|compliment)\b/i.test(text)) return true;
     if (/\b(do you|did you|can you|could you|would you|will you|were you|are you|have you|tell me|know any|anything you|what do you|where were you|why did you|who did you)\b/i.test(text)) return true;
     return /\b(i|he|she|they|we)\s+(say|says|ask|asks|tell|tells|reply|replies|whisper|whispers|shout|shouts)\b/i.test(text)
       || /\b(compliment|praise|chat with|speak with|talk to|listen to|hear out)\b/i.test(text)
@@ -7708,24 +7870,30 @@ export default function App() {
         }
       } else if (lower.match(/\b(watch|observe|look around|people watch|study the room|study everyone|sneak around|snoop|shadow|tail)\b/)) {
         const roomPeople = mysteryPeopleInRoom(workingMystery(), currentRoom).filter((person) => person.id !== mystery.player.id) as MysteryNpc[];
+        const stealthyObservation = Boolean(lower.match(/\b(sneak|snoop|shadow|tail)\b/));
         const observeRoll = rollResult?.check === "Stealth" || rollResult?.check === "Search" || rollResult?.check === "Composure"
           ? rollResult
-          : mysterySpecificRollOutcome(lower.match(/\b(sneak|snoop|shadow|tail)\b/) ? "Stealth" : "Search", workingMystery());
+          : mysterySpecificRollOutcome(stealthyObservation ? "Stealth" : "Search", workingMystery());
         const observeRollText = mysteryRollText(observeRoll);
         markSeenNpcs(roomPeople.map((npc) => npc.id));
         if (roomPeople.length === 0) {
           messages.push({ id: uid(), speaker: "GM", text: "You study the room, but no resident is openly present.", roll: observeRollText });
           ledgerLines.push(`Observation found no residents in ${mysteryRoomName(mystery, currentRoom)}.${observeRollText ? ` ${observeRollText}.` : ""}`);
         } else if (mysteryRollMeets(observeRoll, "easy")) {
-          const fields: MysteryNpcKnowledgeField[] = mysteryRollMeets(observeRoll, "medium")
-            ? ["name", "occupation", "reasonOfStay"]
-            : ["name"];
-          learnNpcFields(roomPeople.map((npc) => npc.id), fields);
-          const names = roomPeople.map((npc) => fullName(npc)).join(", ");
-          const extra = fields.includes("occupation") ? " You also catch enough introductions and servant talk to note occupations and reasons for staying." : "";
-          const line = `You watch quietly and place names to faces: ${names}.${extra}`;
+          const observationEntries = roomPeople.map((npc, index) => ({
+            npc,
+            fields: mysteryObservationFieldsForNpc(workingMystery(), npc, observeRoll, stealthyObservation, index)
+          }));
+          observationEntries.forEach((entry) => learnNpcFields([entry.npc.id], entry.fields));
+          const learnedDetails = observationEntries
+            .map((entry) => mysteryObservationLineForNpc(workingMystery(), entry.npc, entry.fields))
+            .join("; ");
+          const modeLine = stealthyObservation
+            ? "You keep to the edges and let the room talk without you."
+            : "You watch quietly and let ordinary manners reveal more than introductions.";
+          const line = `${modeLine} You learn: ${learnedDetails}.`;
           messages.push({ id: uid(), speaker: "GM", text: line, roll: observeRollText, rich: mysteryNpcSegments(line, workingMystery()) });
-          ledgerLines.push(`Observation learned ${fields.join(", ")} for ${roomPeople.map(fullName).join(", ")} in ${mysteryRoomName(mystery, currentRoom)}.${observeRollText ? ` ${observeRollText}.` : ""}`);
+          ledgerLines.push(`Observation learned resident facts in ${mysteryRoomName(mystery, currentRoom)}: ${observationEntries.map((entry) => `${fullName(entry.npc)} [${entry.fields.join(", ")}]`).join("; ")}.${observeRollText ? ` ${observeRollText}.` : ""}`);
         } else {
           const line = "You watch for patterns, but the room keeps its names and motives folded away.";
           messages.push({ id: uid(), speaker: "GM", text: line, roll: observeRollText });
@@ -8040,6 +8208,14 @@ export default function App() {
         ledgerLines.push(`AI reply accepted from ${aiReply.mode}; summary=${Boolean(aiReply.summary)}; memory writes=${aiReply.memoryWrites?.length ?? 0}.`);
       } else if (!aiReply) {
         ledgerLines.push("AI reply unavailable or rejected by validation; scripted fallback used.");
+      }
+
+      const nextVisibleMystery = { ...workingMystery(), day: nextTime.day, daytime: nextTime.daytime, currentRoomId: currentRoom };
+      const visibleCurrentRoomNpcIds = mysteryPeopleInRoom(nextVisibleMystery, currentRoom)
+        .filter((person) => person.id !== mystery.player.id)
+        .map((person) => person.id);
+      if (visibleCurrentRoomNpcIds.length > 0) {
+        seenNpcIds = Array.from(new Set([...seenNpcIds, ...visibleCurrentRoomNpcIds]));
       }
 
       const turnMessageIds = new Set(messages.map((message) => message.id));
@@ -8850,6 +9026,13 @@ export default function App() {
     const content = (
       <SafeAreaView style={[styles.safe, { backgroundColor: "transparent" }]}>
         <StatusBar barStyle={themeName === "dark" ? "light-content" : "dark-content"} />
+        {ravenwoodWarmSources.length > 0 ? (
+          <View pointerEvents="none" style={styles.assetWarmCache}>
+            {ravenwoodWarmSources.map((source) => (
+              <Image key={ravenwoodSourceKey(source)} source={source} fadeDuration={0} resizeMode="cover" style={styles.assetWarmImage} />
+            ))}
+          </View>
+        ) : null}
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
@@ -9270,15 +9453,9 @@ export default function App() {
     const currentRoom = mysteryRoomName(mystery, mystery.currentRoomId);
     const closedDoorRoom = mystery.closedDoorRoomId ? mystery.rooms.find((room) => room.id === mystery.closedDoorRoomId) : undefined;
     const roomBackground = ravenwoodRoomBackgroundFor(mystery, themeName);
-    const frameStyle = [styles.storyFrame, styles.mysteryStoryFrame, { borderColor: C.line, backgroundColor: C.panel }];
-    const sceneHeaderStyle = [styles.mysterySceneHeader, styles.ravenwoodBubbleBackdrop, { backgroundColor: themeName === "dark" ? "rgba(20, 18, 23, 0.76)" : "rgba(239, 232, 220, 0.74)", borderColor: "rgba(240, 196, 92, 0.28)" }];
+    const frameStyle = [styles.mysteryStoryFrame, styles.mysteryStoryNoOuterFrame];
     const storyPanelStyle = [styles.storyTextPanel, styles.mysteryTextPanelWide, styles.ravenwoodBubbleBackdrop, { backgroundColor: themeName === "dark" ? "rgba(10, 9, 10, 0.82)" : "rgba(255, 250, 242, 0.82)", borderColor: C.line }];
     const inputPanelStyle = [styles.storyInputPanel, styles.ravenwoodBubbleBackdrop, { backgroundColor: themeName === "dark" ? "rgba(10, 9, 10, 0.78)" : "rgba(255, 250, 242, 0.82)", borderColor: C.line }];
-    const aiStatus = ravenwoodAiStatus;
-    const aiStatusLine = aiStatus
-      ? `${aiStatus.platform} | ${aiStatus.modelExists ? "model saved" : "no model"} | ${aiStatus.loaded ? "loaded" : "not loaded"}`
-      : "AI status not checked";
-    const aiStatusColor = aiStatus?.loaded ? C.good : aiStatus?.nativeCapable ? C.dim : C.warning;
     const sceneHeaderContent = (
       <>
         <PortraitImage subject={mysteryPlayerPortraitSubject(mystery.player)} size="large" highlight />
@@ -9296,6 +9473,7 @@ export default function App() {
     );
     const storyPanelContent = (
       <View style={styles.mysteryChatInsideStack}>
+        <View style={styles.mysterySceneHeaderCompact}>{sceneHeaderContent}</View>
         <ScrollView ref={storyScrollRef} style={[styles.storyMessages, styles.mysteryStoryMessages]}>
           {visibleMessages.map((message) => (
             <View
@@ -9332,39 +9510,10 @@ export default function App() {
         <Text style={[styles.rollText, styles.storyCount, { color: C.dim }]}>{mysteryInput.length}/500</Text>
       </>
     );
-    const aiTestPanelContent = (
-      <View style={[styles.chatAiTestPanel, styles.ravenwoodBubbleBackdrop, { backgroundColor: themeName === "dark" ? "rgba(16, 14, 18, 0.82)" : "rgba(255, 250, 242, 0.86)", borderColor: C.line }]}>
-        <View style={styles.rowBetween}>
-          <View>
-            <Text style={[styles.storySpeaker, { color: C.gold }]}>AI TEST</Text>
-            <Text style={[styles.rollText, { color: aiStatusColor }]}>{aiStatusLine}</Text>
-          </View>
-          <Button small label="Refresh" onPress={refreshRavenwoodAiStatus} variant="neutral" />
-        </View>
-        {aiStatus?.error ? <Text style={[styles.rollText, { color: C.warning }]}>{aiStatus.error}</Text> : null}
-        <TextInput
-          value={ravenwoodAiTestInput}
-          onChangeText={(value) => setRavenwoodAiTestInput(value.slice(0, 220))}
-          placeholder="Test AI using this mystery context..."
-          placeholderTextColor={C.dim}
-          multiline
-          maxLength={220}
-          style={[styles.chatAiTestInput, { color: C.text, borderColor: C.line, backgroundColor: C.panel2 }]}
-        />
-        <View style={styles.wrapRow}>
-          <Button small label="Download" onPress={downloadRavenwoodAiModel} disabled={mysteryAiThinking} />
-          <Button small label="Load" onPress={loadRavenwoodAiModel} disabled={mysteryAiThinking} />
-          <Button small label={mysteryAiThinking ? "Testing" : "Test Here"} onPress={testRavenwoodAiModel} disabled={mysteryAiThinking || ravenwoodAiTestInput.trim().length === 0} />
-        </View>
-        {ravenwoodAiTestOutput ? <Text style={[styles.rollText, { color: C.text }]}>{ravenwoodAiTestOutput}</Text> : null}
-      </View>
-    );
     const frameContent = (
       <>
-        <View style={sceneHeaderStyle}>{sceneHeaderContent}</View>
         <View style={storyPanelStyle}>{storyPanelContent}</View>
         <View style={inputPanelStyle}>{inputPanelContent}</View>
-        {aiTestPanelContent}
       </>
     );
     return (
@@ -9724,46 +9873,61 @@ export default function App() {
   if (screen === "mysteryDetectiveSelect") {
     return (
       <Shell>
-        <View style={styles.rowBetween}>
-          <Text style={[styles.titleSmall, { color: C.text }]}>Choose Detective</Text>
-          <Button small label="Back" onPress={() => setScreen("menu")} />
-        </View>
-        <ScrollView
-          ref={detectiveCarouselRef}
-          pagingEnabled
-          snapToInterval={detectiveCardHeight + 14}
-          decelerationRate="fast"
-          showsVerticalScrollIndicator={false}
-          style={[styles.detectiveVerticalCarousel, { height: detectiveCardHeight }]}
-          onScroll={(event) => {
-            detectiveCarouselOffsetRef.current = event.nativeEvent.contentOffset.y;
-          }}
-          scrollEventThrottle={16}
-          contentContainerStyle={styles.detectiveCarousel}
-        >
-          {ravenwoodDetectiveProfiles.map((profile) => {
-            const selected = selectedMysteryDetective.id === profile.id;
-            return (
-              <Pressable
-                key={profile.id}
-                onPress={() => chooseMysteryDetective(profile.id)}
-                style={[styles.detectiveCard, { width: detectiveCardWidth, height: detectiveCardHeight, backgroundColor: selected ? C.panel2 : C.panel, borderColor: selected ? C.accent : C.line }]}
-              >
-                <PortraitImage subject={mysteryDetectivePortraitSubject(profile, 24)} size="hero" highlight={selected} />
-                <Text style={[styles.heading, styles.detectiveName, { color: C.text }]}>{profile.firstName} {profile.familyName}</Text>
-                <View style={styles.detectiveQuirkList}>
-                  {profile.quirks.map((quirk) => (
-                    <View key={quirk.id} style={[styles.detectiveQuirkRow, { borderColor: C.line }]}>
-                      <Text style={[styles.body, styles.detectiveQuirkText, { color: C.text }]}>{quirk.label}</Text>
-                      <Text style={[styles.rollText, styles.detectiveQuirkModifier, styles.gameHiddenText]}>{signedModifier(quirk.modifier)} {quirk.check}</Text>
-                    </View>
-                  ))}
+        <View style={[styles.detectiveSelectPage, { minHeight: detectiveSelectMinHeight }]}>
+          <View style={styles.rowBetween}>
+            <Text style={[styles.titleSmall, { color: C.text }]}>Choose Detective</Text>
+            <Button small label="Back" onPress={() => setScreen("menu")} />
+          </View>
+          <ScrollView
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            style={[styles.detectiveSheet, { height: detectiveSheetHeight, borderColor: C.line, backgroundColor: C.panel }]}
+            contentContainerStyle={styles.detectiveSheetContent}
+          >
+            {ravenwoodDetectiveProfiles.map((profile) => {
+              const selected = selectedMysteryDetective.id === profile.id;
+              return (
+                <View
+                  key={profile.id}
+                  style={[styles.detectiveSheetRow, { borderColor: C.line }, selected && { backgroundColor: C.panel2, borderColor: C.accent }]}
+                >
+                  <Pressable onPress={() => chooseMysteryDetective(profile.id)} style={styles.detectiveSheetNameBlock}>
+                    <Text style={[styles.heading, styles.detectiveName, { color: C.text }]}>{profile.firstName} {profile.familyName}</Text>
+                  </Pressable>
+                  <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={styles.detectiveAgeSheetRow}>
+                    {ravenwoodPlayerSelectableAges.map((age) => {
+                      const ageSelected = selected && selectedMysteryDetectiveAge === age;
+                      return (
+                        <Pressable
+                          key={`${profile.id}-${age}`}
+                          onPress={() => {
+                            setSelectedMysteryDetectiveId(profile.id);
+                            setSelectedMysteryDetectiveAge(age);
+                          }}
+                          style={[styles.detectiveAgeSheetCell, { width: detectiveAgeChoiceWidth }]}
+                        >
+                          <PortraitImage subject={mysteryDetectivePortraitSubject(profile, age)} size="large" highlight={ageSelected} />
+                          <Text style={[styles.rollText, styles.detectiveAgePortraitLabel, { color: ageSelected ? C.gold : C.dim }]}>Age {age}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                  <View style={styles.detectiveQuirkList}>
+                    {profile.quirks.map((quirk) => (
+                      <View key={quirk.id} style={[styles.detectiveQuirkRow, { borderColor: C.line }]}>
+                        <Text style={[styles.body, styles.detectiveQuirkText, { color: C.text }]}>{quirk.label}</Text>
+                        <Text style={[styles.rollText, styles.detectiveQuirkModifier, styles.gameHiddenText]}>{signedModifier(quirk.modifier)} {quirk.check}</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-        <Button label="THIS IS MY DETECTIVE" onPress={confirmMysteryDetective} />
+              );
+            })}
+          </ScrollView>
+          <View style={styles.detectiveConfirmFooter}>
+            <Button label="THIS IS MY DETECTIVE" onPress={confirmMysteryDetective} />
+          </View>
+        </View>
       </Shell>
     );
   }
@@ -10556,10 +10720,13 @@ export default function App() {
                 const isCurrentRoom = activeMystery.currentRoomId === room.id;
                 const visibleToPlayer = room.accessible || room.kind === "public" || room.id === activeMystery.playerRoomId;
                 const playerInsideFoggedRoom = isCurrentRoom && !visibleToPlayer;
+                const roomPeople = mysteryPeopleInRoom(activeMystery, room.id);
                 const people = visibleToPlayer
-                  ? mysteryPeopleInRoom(activeMystery, room.id).filter((person) =>
-                    person.id === activeMystery.player.id || (activeMystery.seenNpcIds ?? []).includes(person.id)
-                  )
+                  ? isCurrentRoom
+                    ? roomPeople
+                    : roomPeople.filter((person) =>
+                      person.id === activeMystery.player.id || (activeMystery.seenNpcIds ?? []).includes(person.id)
+                    )
                   : [];
                 const fogSource = ravenwoodFogLayers[roomIndex % ravenwoodFogLayers.length];
                 const fogOpacity = mapFogMotion.interpolate({
@@ -10611,7 +10778,7 @@ export default function App() {
                         </View>
                       ) : null}
                       <View style={styles.row}>
-                        {people.slice(0, 5).map((person) => (
+                        {people.map((person) => (
                           <Pressable key={person.id} onPress={() => focusMysteryNpc(person.id)} style={styles.mapPortraitButton}>
                             <PortraitImage subject={person} size="map" />
                           </Pressable>
@@ -11055,6 +11222,8 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   backgroundImage: { flex: 1 },
+  assetWarmCache: { position: "absolute", width: 1, height: 1, left: -12, top: -12, overflow: "hidden", opacity: 0.01 },
+  assetWarmImage: { width: 1, height: 1 },
   backgroundTint: { flex: 1 },
   scroll: { flex: 1 },
   container: { padding: 20, gap: 14 },
@@ -11229,21 +11398,38 @@ const styles = StyleSheet.create({
   iconDumpSheet: { position: "absolute" },
   mysteryHeaderProfile: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 10, flex: 1, minWidth: 0 },
   mysteryHeaderName: { flexShrink: 1, textAlign: "right" },
+  detectiveSelectPage: { gap: 10 },
+  detectiveSheet: { borderWidth: 1, borderRadius: 8, overflow: "hidden", flexGrow: 0 },
+  detectiveSheetContent: { paddingBottom: 6 },
+  detectiveSheetRow: { borderBottomWidth: 1, paddingHorizontal: 10, paddingVertical: 9, gap: 7 },
+  detectiveSheetNameBlock: { alignSelf: "stretch" },
+  detectiveAgeSheetRow: { gap: 10, paddingRight: 10, alignItems: "flex-start" },
+  detectiveAgeSheetCell: { alignItems: "center", gap: 4 },
   detectiveVerticalCarousel: { alignSelf: "center", flexGrow: 0 },
-  detectiveCarousel: { gap: 14, paddingLeft: 2, paddingRight: 12, paddingBottom: 14 },
-  detectiveCard: { width: 268, borderWidth: 1, borderRadius: 8, padding: 14, gap: 10, alignItems: "center" },
+  detectiveCarousel: { gap: 10, paddingLeft: 2, paddingRight: 10, paddingBottom: 10 },
+  detectiveCard: { width: 268, borderWidth: 1, borderRadius: 8, padding: 10, gap: 7, alignItems: "center", justifyContent: "center" },
+  detectivePortraitAgeStrip: { width: "100%", maxHeight: 166, overflow: "hidden" },
+  detectiveAgePortraitContent: { gap: 8, alignItems: "center" },
+  detectiveAgePortraitCard: { minHeight: 156, borderWidth: 1, borderRadius: 8, padding: 5, alignItems: "center", justifyContent: "center", gap: 4 },
+  detectiveAgePortraitLabel: { fontWeight: "900", textAlign: "center" },
   detectiveName: { textAlign: "center" },
   detectiveTraitList: { width: "100%", gap: 5, alignItems: "flex-start" },
   detectiveTraitText: { fontSize: 12, lineHeight: 16, textAlign: "left" },
-  detectiveQuirkList: { alignSelf: "stretch", gap: 8, marginTop: 4 },
-  detectiveQuirkRow: { borderTopWidth: 1, paddingTop: 8, gap: 3 },
-  detectiveQuirkText: { marginTop: 0, fontSize: 13, lineHeight: 17 },
+  detectiveQuirkList: { alignSelf: "stretch", gap: 5, marginTop: 2 },
+  detectiveQuirkRow: { borderTopWidth: 1, paddingTop: 5, gap: 2 },
+  detectiveQuirkText: { marginTop: 0, fontSize: 12, lineHeight: 15 },
   detectiveQuirkModifier: { fontWeight: "900", textAlign: "left" },
   detectiveModifierGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
   detectiveAgeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   detectiveAgeCard: { width: 148, borderWidth: 1, borderRadius: 8, padding: 12, alignItems: "center", gap: 8 },
+  detectiveAgePickerPanel: { borderWidth: 1, borderRadius: 8, padding: 10, gap: 8 },
+  detectiveAgeCarousel: { gap: 10, paddingRight: 10 },
+  detectiveAgeSlideCard: { width: 98, minHeight: 166, borderWidth: 1, borderRadius: 8, padding: 8, alignItems: "center", gap: 6 },
+  detectiveAgeSlideLabel: { fontWeight: "900", textAlign: "center" },
   detectiveAgeLabel: { fontSize: 18, lineHeight: 22 },
+  detectiveConfirmFooter: { paddingTop: 4 },
   mysteryStoryFrame: { minHeight: 0 },
+  mysteryStoryNoOuterFrame: { borderWidth: 0, padding: 0, gap: 8, backgroundColor: "transparent" },
   chatAiTestPanel: { borderWidth: 1, borderRadius: 8, padding: 10, gap: 8 },
   chatAiTestInput: { minHeight: 54, maxHeight: 90, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, textAlignVertical: "top" },
   mysteryMessageIconRow: { flexDirection: "row", alignItems: "center", gap: 10 },
@@ -11266,11 +11452,12 @@ const styles = StyleSheet.create({
   ravenwoodBubbleBackdropImage: { borderRadius: 8 },
   ravenwoodSceneBackdropImage: { borderRadius: 8 },
   mysterySceneHeader: { minHeight: 144, borderWidth: 1, borderRadius: 8, padding: 10, flexDirection: "row", alignItems: "center", gap: 12 },
+  mysterySceneHeaderCompact: { minHeight: 120, flexDirection: "row", alignItems: "center", gap: 12 },
   mysterySceneMeta: { flex: 1, minWidth: 0, justifyContent: "center" },
   mysterySceneMetaRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   mysteryScenePlaceBlock: { flex: 1, minWidth: 0 },
   mysteryScenePlaceName: { color: "#f5e3c8", fontSize: 21, lineHeight: 26, fontWeight: "800" },
-  mysteryTextPanelWide: { minHeight: 260 },
+  mysteryTextPanelWide: { minHeight: 390 },
   mysteryChatInsideStack: { gap: 10 },
   mysteryStoryMessages: { maxHeight: 300 },
   mysteryDossierGrid: { gap: 4 },

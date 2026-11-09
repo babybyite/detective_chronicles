@@ -6,6 +6,7 @@
   "scripts": {
     "start": "expo start",
     "ai": "node scripts/ravenwood-ai-server.mjs",
+    "optimize-assets": "node scripts/optimize-runtime-assets.mjs",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
